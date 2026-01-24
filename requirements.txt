@@ -1,0 +1,17 @@
+# Gitea Mirror Backup - Requirements
+# This script uses only Python standard library modules
+# No external dependencies required!
+
+# Python >= 3.6
+# The following are standard library modules used:
+# - pathlib
+# - subprocess
+# - datetime
+# - logging
+# - shutil
+# - sys
+
+# Optional: For development/testing
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=4.0.0

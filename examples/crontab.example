@@ -1,0 +1,63 @@
+# Gitea Mirror Backup - Crontab Configuration Examples
+
+# ============================================
+# Daily Backup Examples
+# ============================================
+
+# Run every day at 2 AM
+0 2 * * * /usr/bin/python3 /path/to/gitea_mirror_backup.py
+
+# Run every day at 3 AM with output to log
+0 3 * * * /usr/bin/python3 /path/to/gitea_mirror_backup.py >> /var/log/backup-cron.log 2>&1
+
+# Run twice daily (2 AM and 2 PM)
+0 2,14 * * * /usr/bin/python3 /path/to/gitea_mirror_backup.py
+
+
+# ============================================
+# Weekly Backup Examples
+# ============================================
+
+# Run every Sunday at 1 AM
+0 1 * * 0 /usr/bin/python3 /path/to/gitea_mirror_backup.py
+
+# Run every Monday at 3 AM
+0 3 * * 1 /usr/bin/python3 /path/to/gitea_mirror_backup.py
+
+
+# ============================================
+# Manual Report Generation
+# ============================================
+
+# Generate report every Monday at 8 AM (without running backup)
+0 8 * * 1 /usr/bin/python3 /path/to/gitea_mirror_backup.py --report
+
+
+# ============================================
+# With Email Notification (requires mailutils)
+# ============================================
+
+# Daily backup with email on completion
+0 2 * * * /usr/bin/python3 /path/to/gitea_mirror_backup.py && mail -s "Gitea Backup Completed" admin@example.com < /backup/gitea-mirrors/latest-report.md
+
+# Weekly report email (Monday 8 AM)
+0 8 * * 1 cat /backup/gitea-mirrors/latest-report.md | mail -s "Gitea Weekly Backup Report" admin@example.com
+
+
+# ============================================
+# Installation Steps
+# ============================================
+# 1. Edit your crontab:
+#    crontab -e
+#
+# 2. Add one of the examples above
+#
+# 3. Save and exit
+#
+# 4. Verify your crontab:
+#    crontab -l
+#
+# 5. Check cron logs:
+#    tail -f /var/log/syslog | grep CRON
+#    # or on some systems:
+#    tail -f /var/log/cron
