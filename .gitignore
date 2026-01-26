@@ -49,6 +49,8 @@ htmlcov/
 
 # Local configuration
 config.local.py
+config.yaml
+config.yml
 .env
 
 # Temporary files

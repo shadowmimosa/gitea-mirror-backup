@@ -1,0 +1,120 @@
+# Gitea 镜像备份系统配置文件
+# 复制此文件为 config.yaml 并根据实际情况修改
+
+# Gitea Docker 配置
+gitea:
+  # Docker 容器名称
+  docker_container: "gitea"
+  
+  # Docker 容器内的 Git 用户（通常是 'git'）
+  docker_git_user: "git"
+  
+  # Gitea 数据卷路径（宿主机上的路径）
+  data_volume: "/opt/gitea"
+  
+  # Gitea 仓库在卷中的相对路径
+  repos_path: "git/repositories"
+
+# 备份配置
+backup:
+  # 备份根目录（宿主机路径）
+  root: "/opt/backup/gitea-mirrors"
+  
+  # 只备份特定组织的仓库（留空或注释掉则备份所有）
+  organizations:
+    - "Test"
+  # organizations: []  # 备份所有组织
+  
+  # 是否检查镜像仓库（如果为 false，备份所有仓库）
+  check_mirror_only: false
+  
+  # 保留策略
+  retention:
+    # 快照保留天数
+    snapshots_days: 30
+    
+    # 每月归档保留月数
+    archives_months: 12
+    
+    # 报告保留天数
+    reports_days: 30
+
+# 异常检测配置
+alerts:
+  # 提交数异常阈值（减少百分比）
+  commit_decrease_threshold: 10
+  
+  # 仓库大小异常阈值（减少百分比）- 仅作为辅助参考
+  size_decrease_threshold: 30
+  
+  # 异常快照永久保留（检测到异常时自动标记）
+  protect_abnormal_snapshots: true
+
+# 日志配置
+logging:
+  # 日志文件路径
+  file: "/var/log/gitea-mirror-backup.log"
+  
+  # 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # 日志格式
+  format: "[%(asctime)s] %(levelname)s: %(message)s"
+  
+  # 日期格式
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# 报告配置
+reports:
+  # 报告目录（相对于 backup.root）
+  directory: "reports"
+  
+  # 最新报告链接名称
+  latest_link: "latest-report.md"
+
+# 通知配置（可选，暂未实现）
+# notifications:
+#   # 邮件通知
+#   email:
+#     enabled: false
+#     smtp_host: "smtp.example.com"
+#     smtp_port: 587
+#     smtp_user: "user@example.com"
+#     smtp_password: "password"
+#     from_addr: "backup@example.com"
+#     to_addrs:
+#       - "admin@example.com"
+#     
+#   # Webhook 通知
+#   webhook:
+#     enabled: false
+#     url: "https://example.com/webhook"
+#     method: "POST"
+#     headers:
+#       Content-Type: "application/json"
+#   
+#   # 企业微信机器人
+#   wecom:
+#     enabled: false
+#     webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+#   
+#   # 钉钉机器人
+#   dingtalk:
+#     enabled: false
+#     webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+#     secret: ""  # 可选，加签密钥
+
+# 高级配置
+advanced:
+  # 并发备份数量（0 表示串行）
+  concurrent_backups: 0
+  
+  # 备份超时时间（秒，0 表示无限制）
+  backup_timeout: 0
+  
+  # 是否在备份前验证 Docker 容器
+  verify_docker: true
+  
+  # 是否生成恢复脚本
+  generate_restore_script: true
+

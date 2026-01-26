@@ -12,81 +12,49 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import logging
 from typing import Optional, List
+import argparse
 
-
-# ============ 配置区域 ============
-class Config:
-    # Docker 容器名称
-    DOCKER_CONTAINER = "gitea"
-
-    # Docker 容器内的 Git 用户（通常是 'git'）
-    DOCKER_GIT_USER = "git"
-
-    # Gitea 数据卷路径（宿主机上的路径）
-    GITEA_DATA_VOLUME = "/opt/gitea/gitea"
-
-    # Gitea 仓库在卷中的相对路径
-    GITEA_REPOS_PATH = "git/repositories"
-
-    # 备份根目录（宿主机路径）
-    BACKUP_ROOT = "/opt/backup/gitea-mirrors"
-
-    # 只备份特定组织的仓库（留空则备份所有）
-    BACKUP_ORGANIZATIONS = ["BackupHubTest"]
-
-    # 快照保留天数
-    SNAPSHOT_RETENTION_DAYS = 30
-
-    # 每月归档保留月数
-    ARCHIVE_RETENTION_MONTHS = 12
-
-    # 提交数异常阈值（减少百分比）
-    COMMIT_DECREASE_THRESHOLD = 10
-
-    # 仓库大小异常阈值（减少百分比）- 仅作为辅助参考
-    SIZE_DECREASE_THRESHOLD = 30
-
-    # 日志文件
-    LOG_FILE = "/var/log/gitea-mirror-backup.log"
-
-    # 报告目录
-    REPORT_DIR = f"{BACKUP_ROOT}/reports"
-
-    # 最新报告链接
-    LATEST_REPORT = f"{BACKUP_ROOT}/latest-report.md"
-
-    # 报告保留天数
-    REPORT_RETENTION_DAYS = 30
-
-    # 异常快照永久保留（检测到异常时自动标记）
-    PROTECT_ABNORMAL_SNAPSHOTS = True
-
-    # 是否检查镜像仓库（如果为 False，备份所有仓库）
-    CHECK_MIRROR_ONLY = False  # 改为 False 以备份所有仓库
+# 导入配置加载器
+try:
+    from config_loader import Config
+except ImportError:
+    print("错误: 无法导入配置加载器")
+    print("请确保 config_loader.py 在同一目录下")
+    sys.exit(1)
 
 
 # ============ 日志配置 ============
-def setup_logging():
+def setup_logging(config_instance: Config):
     """设置日志"""
     # 确保日志文件存在
-    log_file = Path(Config.LOG_FILE)
+    log_file = Path(config_instance.LOG_FILE)
     log_file.parent.mkdir(parents=True, exist_ok=True)
     log_file.touch(exist_ok=True)
 
+    # 获取日志级别
+    log_level = getattr(logging, config_instance.LOG_LEVEL.upper(), logging.INFO)
+
+    # 获取日志格式
+    loader = config_instance.get_loader()
+    log_format = loader.get('logging.format', '[%(asctime)s] %(message)s')
+    date_format = loader.get('logging.date_format', '%Y-%m-%d %H:%M:%S')
+
     # 配置日志格式
     logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
+        level=log_level,
+        format=log_format,
+        datefmt=date_format,
         handlers=[
-            logging.FileHandler(Config.LOG_FILE),
+            logging.FileHandler(config_instance.LOG_FILE),
             logging.StreamHandler(sys.stdout),
         ],
     )
     return logging.getLogger(__name__)
 
 
-logger = setup_logging()
+# 全局变量，稍后初始化
+logger = None
+config = None
 
 
 # ============ 工具函数 ============
@@ -111,11 +79,11 @@ def check_docker_container() -> bool:
     """检查 Docker 容器是否运行"""
     try:
         result = run_command(['docker', 'ps'], check=False)
-        if Config.DOCKER_CONTAINER in result.stdout:
+        if config.DOCKER_CONTAINER in result.stdout:
             logger.info("✓ Docker 容器运行正常")
             return True
         else:
-            logger.error(f"Docker 容器 {Config.DOCKER_CONTAINER} 未运行")
+            logger.error(f"Docker 容器 {config.DOCKER_CONTAINER} 未运行")
             return False
     except Exception as e:
         logger.error(f"检查 Docker 容器失败: {e}")
@@ -145,8 +113,8 @@ def get_commit_count(repo_path: Path) -> int:
                 'docker',
                 'exec',
                 '-u',
-                Config.DOCKER_GIT_USER,
-                Config.DOCKER_CONTAINER,
+                config.DOCKER_GIT_USER,
+                config.DOCKER_CONTAINER,
                 'git',
                 '-C',
                 container_path,
@@ -169,7 +137,7 @@ def get_commit_count(repo_path: Path) -> int:
 
 def is_mirror_repo(repo_path: Path) -> bool:
     """检查是否是镜像仓库"""
-    if not Config.CHECK_MIRROR_ONLY:
+    if not config.CHECK_MIRROR_ONLY:
         logger.info("    CHECK_MIRROR_ONLY=False，备份所有仓库")
         return True  # 不检查，备份所有仓库
 
@@ -184,8 +152,8 @@ def is_mirror_repo(repo_path: Path) -> bool:
                 'docker',
                 'exec',
                 '-u',
-                Config.DOCKER_GIT_USER,
-                Config.DOCKER_CONTAINER,
+                config.DOCKER_GIT_USER,
+                config.DOCKER_CONTAINER,
                 'git',
                 '-C',
                 container_path,
@@ -214,20 +182,20 @@ class RepositoryBackup:
         self.owner = repo_path.parent.name
         self.repo_name = repo_path.name.replace('.git', '')
         self.full_name = f"{self.owner}/{self.repo_name}"
-        self.backup_dir = Path(Config.BACKUP_ROOT) / self.owner / self.repo_name
+        self.backup_dir = Path(config.BACKUP_ROOT) / self.owner / self.repo_name
         self.snapshot_dir = self.backup_dir / "snapshots"
         self.archive_dir = self.backup_dir / "archives"
 
     def should_backup(self) -> bool:
         """检查是否应该备份这个仓库"""
         # 检查组织过滤（大小写不敏感）
-        if Config.BACKUP_ORGANIZATIONS:
-            logger.info(f"    组织过滤: {Config.BACKUP_ORGANIZATIONS}")
+        if config.BACKUP_ORGANIZATIONS:
+            logger.info(f"    组织过滤: {config.BACKUP_ORGANIZATIONS}")
             logger.info(f"    当前组织: {self.owner}")
 
             # 将组织名转换为小写进行比较
             owner_lower = self.owner.lower()
-            orgs_lower = [org.lower() for org in Config.BACKUP_ORGANIZATIONS]
+            orgs_lower = [org.lower() for org in config.BACKUP_ORGANIZATIONS]
 
             if owner_lower not in orgs_lower:
                 logger.info(f"    ❌ 跳过 {self.full_name}: 不在备份组织列表中")
@@ -235,7 +203,7 @@ class RepositoryBackup:
             logger.info("    ✓ 组织匹配")
 
         # 检查是否是镜像仓库
-        logger.info(f"    检查镜像仓库: CHECK_MIRROR_ONLY={Config.CHECK_MIRROR_ONLY}")
+        logger.info(f"    检查镜像仓库: CHECK_MIRROR_ONLY={config.CHECK_MIRROR_ONLY}")
         if not is_mirror_repo(self.repo_path):
             logger.info(f"    ❌ 跳过 {self.full_name}: 不是镜像仓库")
             return False
@@ -319,7 +287,7 @@ class RepositoryBackup:
         if current_commits < prev_commits:
             decrease_percent = ((prev_commits - current_commits) * 100) // prev_commits
 
-            if decrease_percent > Config.COMMIT_DECREASE_THRESHOLD:
+            if decrease_percent > config.COMMIT_DECREASE_THRESHOLD:
                 alert_triggered = True
                 alert_messages.append(f"提交数异常减少: {decrease_percent}%")
                 alert_messages.append(
@@ -332,7 +300,7 @@ class RepositoryBackup:
         # 同时检查大小变化（辅助参考）
         if current_size < prev_size:
             size_decrease = ((prev_size - current_size) * 100) // prev_size
-            if size_decrease > Config.SIZE_DECREASE_THRESHOLD:
+            if size_decrease > config.SIZE_DECREASE_THRESHOLD:
                 if not alert_triggered:
                     alert_messages.append(f"仓库大小异常减少: {size_decrease}%")
                 else:
@@ -351,12 +319,12 @@ class RepositoryBackup:
                 f.write("可能原因: force push、分支删除或历史重写\n")
 
             # 添加到审核列表
-            need_review_file = Path(Config.BACKUP_ROOT) / ".need_review"
+            need_review_file = Path(config.BACKUP_ROOT) / ".need_review"
             with open(need_review_file, 'a') as f:
                 f.write(f"{self.full_name}\n")
 
             # 保护上一次的快照（异常发生前的正常状态）
-            if Config.PROTECT_ABNORMAL_SNAPSHOTS:
+            if config.PROTECT_ABNORMAL_SNAPSHOTS:
                 previous_snapshot = self.get_previous_snapshot(snapshot_path)
                 if previous_snapshot:
                     self.protect_snapshot(previous_snapshot, alert_messages)
@@ -436,7 +404,7 @@ class RepositoryBackup:
         if not self.snapshot_dir.exists():
             return
 
-        cutoff_date = datetime.now() - timedelta(days=Config.SNAPSHOT_RETENTION_DAYS)
+        cutoff_date = datetime.now() - timedelta(days=config.SNAPSHOT_RETENTION_DAYS)
         deleted_count = 0
         protected_count = 0
 
@@ -488,8 +456,8 @@ class RepositoryBackup:
                     'docker',
                     'exec',
                     '-u',
-                    Config.DOCKER_GIT_USER,
-                    Config.DOCKER_CONTAINER,
+                    config.DOCKER_GIT_USER,
+                    config.DOCKER_CONTAINER,
                     'git',
                     '-C',
                     container_repo_path,
@@ -505,7 +473,7 @@ class RepositoryBackup:
                 [
                     'docker',
                     'cp',
-                    f"{Config.DOCKER_CONTAINER}:/tmp/temp.bundle",
+                    f"{config.DOCKER_CONTAINER}:/tmp/temp.bundle",
                     str(archive_file),
                 ]
             )
@@ -516,8 +484,8 @@ class RepositoryBackup:
                     'docker',
                     'exec',
                     '-u',
-                    Config.DOCKER_GIT_USER,
-                    Config.DOCKER_CONTAINER,
+                    config.DOCKER_GIT_USER,
+                    config.DOCKER_CONTAINER,
                     'rm',
                     '/tmp/temp.bundle',
                 ]
@@ -527,7 +495,7 @@ class RepositoryBackup:
 
             # 清理旧归档
             cutoff_date = datetime.now() - timedelta(
-                days=Config.ARCHIVE_RETENTION_MONTHS * 30
+                days=config.ARCHIVE_RETENTION_MONTHS * 30
             )
             for archive in self.archive_dir.glob("*.bundle"):
                 mtime = datetime.fromtimestamp(archive.stat().st_mtime)
@@ -570,8 +538,8 @@ class RepositoryBackup:
 
 REPO_NAME="{self.full_name}"
 SNAPSHOT_DIR="{self.snapshot_dir}"
-CONTAINER="{Config.DOCKER_CONTAINER}"
-GIT_USER="{Config.DOCKER_GIT_USER}"
+CONTAINER="{config.DOCKER_CONTAINER}"
+GIT_USER="{config.DOCKER_GIT_USER}"
 CONTAINER_REPO_PATH="/data/git/repositories/{self.owner}/{self.repo_name}.git"
 HOST_REPO_PATH="{self.repo_path}"
 
@@ -803,11 +771,11 @@ esac
 # ============ 报告生成 ============
 def cleanup_old_reports():
     """清理旧报告（跳过被保护的报告）"""
-    report_dir = Path(Config.REPORT_DIR)
+    report_dir = Path(config.REPORT_DIR)
     if not report_dir.exists():
         return
 
-    cutoff_date = datetime.now() - timedelta(days=Config.REPORT_RETENTION_DAYS)
+    cutoff_date = datetime.now() - timedelta(days=config.REPORT_RETENTION_DAYS)
     deleted_count = 0
     protected_count = 0
 
@@ -836,14 +804,14 @@ def generate_report():
     """生成备份报告"""
     logger.info("生成备份报告...")
 
-    backup_root = Path(Config.BACKUP_ROOT)
-    report_dir = Path(Config.REPORT_DIR)
+    backup_root = Path(config.BACKUP_ROOT)
+    report_dir = Path(config.REPORT_DIR)
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # 生成带时间戳的报告文件
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     report_file = report_dir / f"report-{timestamp}.md"
-    latest_report = Path(Config.LATEST_REPORT)
+    latest_report = Path(config.LATEST_REPORT)
 
     # 统计信息
     total_repos = 0
@@ -1107,12 +1075,12 @@ def generate_report():
         f.write("- 快照使用硬链接技术，实际占用空间远小于显示值\n")
         f.write(
             "- 报告每次备份时自动生成，历史报告保留 {} 天\n".format(
-                Config.REPORT_RETENTION_DAYS
+                config.REPORT_RETENTION_DAYS
             )
         )
         f.write("- 🔒 检测到异常时，对应的**快照和报告**会自动标记为**永久保留**\n")
         f.write("- 如需恢复仓库，使用对应的 restore.sh 脚本\n")
-        f.write(f"- 最新报告链接: {Config.LATEST_REPORT}\n")
+        f.write(f"- 最新报告链接: {config.LATEST_REPORT}\n")
         f.write("\n")
         f.write("**受保护资源管理**:\n")
         f.write("- 查看快照保护: `cat /path/to/snapshot/.protected`\n")
@@ -1160,11 +1128,11 @@ def main():
         sys.exit(1)
 
     # 确保备份目录存在
-    backup_root = Path(Config.BACKUP_ROOT)
+    backup_root = Path(config.BACKUP_ROOT)
     backup_root.mkdir(parents=True, exist_ok=True)
 
     # 获取仓库路径
-    repos_path = Path(Config.GITEA_DATA_VOLUME) / Config.GITEA_REPOS_PATH
+    repos_path = Path(config.GITEA_DATA_VOLUME) / config.GITEA_REPOS_PATH
 
     if not repos_path.exists():
         logger.error(f"仓库目录不存在: {repos_path}")
@@ -1228,23 +1196,85 @@ def main():
 
 if __name__ == "__main__":
     try:
-        # 支持命令行参数
-        if len(sys.argv) > 1:
-            if sys.argv[1] == "--report":
-                # 只生成报告，不执行备份
-                logger.info("手动生成报告...")
-                generate_report()
-                sys.exit(0)
-            elif sys.argv[1] == "--cleanup":
-                # 只清理旧报告
-                logger.info("清理旧报告...")
-                cleanup_old_reports()
+        # 解析命令行参数
+        parser = argparse.ArgumentParser(
+            description='Gitea Docker 镜像仓库备份系统',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+示例:
+  %(prog)s                          # 执行完整备份
+  %(prog)s -c config.yaml           # 使用指定配置文件
+  %(prog)s --report                 # 只生成报告
+  %(prog)s --cleanup                # 只清理旧报告
+  %(prog)s --show-config            # 显示当前配置
+  %(prog)s --validate-config        # 验证配置文件
+
+环境变量:
+  GITEA_DOCKER_CONTAINER            # Docker 容器名称
+  BACKUP_ROOT                       # 备份根目录
+  BACKUP_ORGANIZATIONS              # 备份组织（逗号分隔）
+  更多环境变量请参考文档
+            """,
+        )
+
+        parser.add_argument('-c', '--config', help='配置文件路径（默认: config.yaml）')
+        parser.add_argument(
+            '--report', action='store_true', help='只生成报告，不执行备份'
+        )
+        parser.add_argument('--cleanup', action='store_true', help='只清理旧报告')
+        parser.add_argument('--show-config', action='store_true', help='显示当前配置')
+        parser.add_argument(
+            '--validate-config', action='store_true', help='验证配置文件'
+        )
+
+        args = parser.parse_args()
+
+        # 初始化配置
+        Config.init(args.config)
+        config = Config()
+
+        # 初始化日志
+        logger = setup_logging(config)
+
+        # 显示配置
+        if args.show_config:
+            config.get_loader().print_config()
+            sys.exit(0)
+
+        # 验证配置
+        if args.validate_config:
+            errors = config.get_loader().validate()
+            if errors:
+                print("\n配置错误:")
+                for error in errors:
+                    print(f"  ✗ {error}")
+                sys.exit(1)
+            else:
+                print("\n✓ 配置验证通过")
                 sys.exit(0)
 
+        # 只生成报告
+        if args.report:
+            logger.info("手动生成报告...")
+            generate_report()
+            sys.exit(0)
+
+        # 只清理旧报告
+        if args.cleanup:
+            logger.info("清理旧报告...")
+            cleanup_old_reports()
+            sys.exit(0)
+
+        # 执行完整备份
         main()
+
     except KeyboardInterrupt:
-        logger.info("\n任务被用户中断")
+        if logger:
+            logger.info("\n任务被用户中断")
         sys.exit(130)
     except Exception as e:
-        logger.error(f"任务执行失败: {e}", exc_info=True)
+        if logger:
+            logger.error(f"任务执行失败: {e}", exc_info=True)
+        else:
+            print(f"错误: {e}")
         sys.exit(1)
