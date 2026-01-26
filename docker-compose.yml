@@ -1,5 +1,14 @@
 version: '3.8'
 
+# 定义共享卷（推荐方式 - 使硬链接生效）
+volumes:
+  gitea-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/gitea-data  # 宿主机上的实际路径
+
 services:
   gitea-backup:
     build:
@@ -15,10 +24,10 @@ services:
       
       # Gitea 配置
       - GITEA_DOCKER_CONTAINER=gitea
-      - GITEA_DATA_VOLUME=/data/gitea
+      - GITEA_DATA_VOLUME=/shared/gitea  # 改为共享卷下的子目录
       
       # 备份配置
-      - BACKUP_ROOT=/backup
+      - BACKUP_ROOT=/shared/backup  # 改为共享卷下的子目录
       - BACKUP_ORGANIZATIONS=
       - CHECK_MIRROR_ONLY=false
       
@@ -40,21 +49,18 @@ services:
       # - WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
       # - WEBHOOK_NOTIFY_ON=on_alert
     
-    # 卷挂载
+    # 卷挂载 - 使用共享卷（支持硬链接）
     volumes:
-      # 配置文件（可选，使用环境变量时不需要）
+      # 配置文件（可选）
       - ./config.yaml:/app/config.yaml:ro
       
-      # Gitea 数据卷（只读）
-      - /opt/gitea/gitea:/data/gitea:ro
-      
-      # 备份目录（读写）
-      - /opt/backup/gitea-mirrors:/backup:rw
+      # 使用同一个卷挂载到 /shared，Gitea 数据和备份都在这个卷下
+      - gitea-data:/shared:rw  # 共享卷，包含 gitea/ 和 backup/ 子目录
       
       # 日志目录
       - /var/log/gitea-backup:/logs:rw
       
-      # Docker socket（用于访问 Gitea 容器）
+      # Docker socket
       - /var/run/docker.sock:/var/run/docker.sock:ro
     
     # 网络模式
@@ -92,15 +98,14 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - GITEA_DOCKER_CONTAINER=gitea
-      - GITEA_DATA_VOLUME=/data/gitea
-      - BACKUP_ROOT=/backup
+      - GITEA_DATA_VOLUME=/shared/gitea
+      - BACKUP_ROOT=/shared/backup
       - LOG_FILE=/logs/gitea-mirror-backup.log
       - LOG_LEVEL=INFO
     
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - /opt/gitea/gitea:/data/gitea:ro
-      - /opt/backup/gitea-mirrors:/backup:rw
+      - gitea-data:/shared:rw
       - /var/log/gitea-backup:/logs:rw
       - /var/run/docker.sock:/var/run/docker.sock:ro
     

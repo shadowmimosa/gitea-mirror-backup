@@ -1184,11 +1184,13 @@ def generate_report():
         except Exception as e:
             logger.warning(f"标记报告保护失败: {e}")
 
-    # 创建或更新到最新报告的软链接
+    # 创建或更新到最新报告的软链接（使用相对路径）
     try:
         if latest_report.exists() or latest_report.is_symlink():
             latest_report.unlink()
-        latest_report.symlink_to(report_file)
+        # 使用相对路径创建软链接
+        relative_path = report_file.relative_to(latest_report.parent)
+        latest_report.symlink_to(relative_path)
         logger.info(f"✓ 报告生成: {report_file}")
         logger.info(f"✓ 最新报告: {latest_report}")
     except Exception as e:
