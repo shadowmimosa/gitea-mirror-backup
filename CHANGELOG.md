@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-01-26
+
+### Fixed
+
+- 🐛 **Docker 环境修复**
+  - 修复 Docker 容器时区配置（添加 TZ 环境变量）
+  - 修复 cron 服务启动问题（Debian 使用 `cron` 而非 `crond`）
+  - 修复跨文件系统硬链接失败问题（自动降级到普通复制）
+  - 修复软链接使用绝对路径导致宿主机无法访问的问题（改用相对路径）
+
+- 🔗 **硬链接优化**
+  - 添加共享卷配置策略（挂载父目录实现同文件系统硬链接）
+  - 添加详细的硬链接配置文档（docs/docker-hardlink.md）
+  - 添加硬链接故障排查文档（docs/docker-hardlink-fix.md）
+  - 硬链接成功时可节省 90%+ 磁盘空间
+
+### Changed
+
+- 📝 **文档完善**
+  - 更新 docker-compose.yml 配置示例
+  - 添加硬链接配置最佳实践
+  - 添加时区配置说明
+
+### Technical Details
+
+- 跨文件系统检测：捕获 `OSError: [Errno 18] Invalid cross-device link`
+- 自动降级策略：硬链接失败时使用 `cp -a` 保持文件属性
+- 软链接相对路径：`latest_report.symlink_to(report_file.relative_to(latest_report.parent))`
+- 共享卷策略：挂载 `/shared` 父目录，所有数据在同一文件系统
+
 ## [1.3.0] - 2026-01-26
 
 ### Added
