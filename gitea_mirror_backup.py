@@ -240,10 +240,14 @@ class RepositoryBackup:
 
             if result.returncode != 0:
                 # 硬链接失败（可能是跨文件系统），使用普通复制
-                if "Invalid cross-device link" in result.stderr or "cross-device" in result.stderr.lower():
+                if (
+                    "Invalid cross-device link" in result.stderr
+                    or "cross-device" in result.stderr.lower()
+                ):
                     logger.warning("  ⚠️  无法使用硬链接（跨文件系统），使用普通复制...")
                     result = run_command(
-                        ['cp', '-a', str(self.repo_path), str(snapshot_path)], check=False
+                        ['cp', '-a', str(self.repo_path), str(snapshot_path)],
+                        check=False,
                     )
 
                 if result.returncode != 0:
@@ -251,14 +255,18 @@ class RepositoryBackup:
                     logger.error(f"  错误: {result.stderr}")
                     return None
 
+            # 获取当前提交数
+            current_commits = get_commit_count(self.repo_path)
+
             # 记录元数据
             meta_file = snapshot_path / ".snapshot_meta"
             with open(meta_file, 'w') as f:
                 f.write(f"timestamp={datetime.now().isoformat()}\n")
                 f.write(f"source={self.repo_path}\n")
                 f.write(f"repo_name={self.full_name}\n")
+                f.write(f"commit_count={current_commits}\n")
 
-            logger.info(f"  ✓ 快照成功: {date_stamp}")
+            logger.info(f"  ✓ 快照成功: {date_stamp} (提交数: {current_commits})")
             return snapshot_path
 
         except Exception as e:

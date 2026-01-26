@@ -1,0 +1,27 @@
+# FastAPI Web 管理界面依赖
+
+# Web 框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# 数据库
+sqlalchemy==2.0.25
+alembic==1.13.1
+
+# 认证
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-dotenv==1.0.0
+
+# 工具
+pydantic[email]>=2.9.2
+pydantic-settings==2.1.0
+
+# 任务调度
+apscheduler==3.10.4
+
+# 其他
+aiofiles==23.2.1
+

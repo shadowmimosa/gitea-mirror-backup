@@ -86,6 +86,41 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Web 管理界面
+  gitea-backup-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: gitea-mirror-backup-web:latest
+    container_name: gitea-backup-web
+    
+    ports:
+      - "8000:8000"
+    
+    environment:
+      - TZ=Asia/Shanghai
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      - DATABASE_URL=sqlite:///data/web.db
+      - BACKUP_BASE_PATH=/shared/backup
+      - BACKUP_CONFIG_PATH=/app/config/config.yaml
+    
+    volumes:
+      - gitea-data:/shared  # 共享卷（与备份服务共享）
+      - ./config:/app/config:ro  # 配置文件（只读）
+      - ./web/data:/app/data  # Web 数据库
+    
+    depends_on:
+      - gitea-backup
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 # 可选：定时任务服务
   gitea-backup-cron:
     image: gitea-mirror-backup:latest
