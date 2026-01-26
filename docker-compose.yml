@@ -10,6 +10,9 @@ services:
     
     # 环境变量配置
     environment:
+      # 时区设置
+      - TZ=Asia/Shanghai
+      
       # Gitea 配置
       - GITEA_DOCKER_CONTAINER=gitea
       - GITEA_DATA_VOLUME=/data/gitea
@@ -57,8 +60,8 @@ services:
     # 网络模式
     network_mode: bridge
     
-    # 重启策略
-    restart: unless-stopped
+    # 重启策略 - 改为 no，执行一次后退出
+    restart: "no"
     
     # 资源限制
     deploy:
@@ -84,9 +87,10 @@ services:
     
     # 使用 cron 定时执行
     entrypoint: /bin/sh
-    command: -c "echo '0 2 * * * cd /app && python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && crond -f"
+    command: -c "echo '0 2 * * * cd /app && python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
     
     environment:
+      - TZ=Asia/Shanghai
       - GITEA_DOCKER_CONTAINER=gitea
       - GITEA_DATA_VOLUME=/data/gitea
       - BACKUP_ROOT=/backup
