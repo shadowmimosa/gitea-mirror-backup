@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-26
+
+### Added
+
+- 🐳 **Docker 容器化支持**
+  - Dockerfile - 基于 python:3.9-slim 的轻量级镜像
+  - docker-compose.yml - 快速部署配置
+  - 支持所有配置选项（环境变量 + 配置文件）
+  - 健康检查和资源限制
+  - 定时任务服务（可选）
+  - 完整的卷挂载配置
+
+- 📝 **Docker 文档**
+  - docs/docker.md - 完整的 Docker 部署指南
+  - 快速开始指南
+  - 配置说明和示例
+  - 定时任务配置（3 种方式）
+  - 监控和维护指南
+  - 故障排查指南
+  - 生产环境部署建议
+
+
+### Changed
+
+- 📚 **文档更新**
+  - README.md / README_CN.md 添加 Docker 快速开始
+  - 推荐使用 Docker 部署方式
+
+- 🔧 **项目结构**
+  - 新增 .dockerignore 优化构建上下文
+  - 开发依赖独立管理
+
+### Docker 特性
+
+- ✅ 轻量级镜像（预计 150-200MB）
+- ✅ 支持环境变量配置
+- ✅ 支持配置文件挂载
+- ✅ 自动健康检查
+- ✅ 资源限制配置
+- ✅ 日志管理
+- ✅ 定时任务支持
+- ✅ Docker Compose 一键部署
+
+### 部署方式
+
+```bash
+# 快速开始
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f gitea-backup
+
+# 手动执行
+docker-compose run --rm gitea-backup
+```
+
+---
+
 ## [1.2.0] - 2026-01-26
 
 ### Added

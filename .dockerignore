@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# 配置文件
+config.yaml
+*.local.yaml
+
+# 测试和临时文件
+test_*.md
+*_TEST_RESULT.md
+*_SUMMARY.md
+*_RESTRUCTURE.md
+*_PLAN.md
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 备份文件
+*.bak
+*.backup
+*~
+
+# Git
+.git/
+.gitignore
+
+# 文档（构建时不需要）
+docs/
+examples/
+legacy/
+*.md
+!README.md
+
+# 测试文件
+tests/
+pytest.ini
+.coveragerc
+requirements-dev.txt
+
+# CI/CD
+.github/
+

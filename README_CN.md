@@ -31,7 +31,21 @@
 
 ## 🎬 快速开始
 
-### 安装
+### 方式 1: Docker（推荐）
+
+```bash
+# 使用 Docker Compose
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f gitea-backup
+```
+
+详见 [Docker 部署指南](docs/docker.md)
+
+### 方式 2: 直接安装
+
+#### 安装
 
 ```bash
 # 1. 克隆仓库

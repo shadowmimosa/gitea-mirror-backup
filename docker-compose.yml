@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  gitea-backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gitea-mirror-backup:latest
+    container_name: gitea-backup
+    
+    # 环境变量配置
+    environment:
+      # Gitea 配置
+      - GITEA_DOCKER_CONTAINER=gitea
+      - GITEA_DATA_VOLUME=/data/gitea
+      
+      # 备份配置
+      - BACKUP_ROOT=/backup
+      - BACKUP_ORGANIZATIONS=
+      - CHECK_MIRROR_ONLY=false
+      
+      # 保留策略
+      - SNAPSHOT_RETENTION_DAYS=30
+      - ARCHIVE_RETENTION_MONTHS=12
+      - REPORT_RETENTION_DAYS=30
+      
+      # 异常检测
+      - COMMIT_DECREASE_THRESHOLD=10
+      - SIZE_DECREASE_THRESHOLD=30
+      - PROTECT_ABNORMAL_SNAPSHOTS=true
+      
+      # 日志配置
+      - LOG_FILE=/logs/gitea-mirror-backup.log
+      - LOG_LEVEL=INFO
+      
+      # 通知配置（可选）
+      # - WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+      # - WEBHOOK_NOTIFY_ON=on_alert
+    
+    # 卷挂载
+    volumes:
+      # 配置文件（可选，使用环境变量时不需要）
+      - ./config.yaml:/app/config.yaml:ro
+      
+      # Gitea 数据卷（只读）
+      - /opt/gitea/gitea:/data/gitea:ro
+      
+      # 备份目录（读写）
+      - /opt/backup/gitea-mirrors:/backup:rw
+      
+      # 日志目录
+      - /var/log/gitea-backup:/logs:rw
+      
+      # Docker socket（用于访问 Gitea 容器）
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    
+    # 网络模式
+    network_mode: bridge
+    
+    # 重启策略
+    restart: unless-stopped
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 可选：定时任务服务
+  gitea-backup-cron:
+    image: gitea-mirror-backup:latest
+    container_name: gitea-backup-cron
+    
+    # 使用 cron 定时执行
+    entrypoint: /bin/sh
+    command: -c "echo '0 2 * * * cd /app && python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && crond -f"
+    
+    environment:
+      - GITEA_DOCKER_CONTAINER=gitea
+      - GITEA_DATA_VOLUME=/data/gitea
+      - BACKUP_ROOT=/backup
+      - LOG_FILE=/logs/gitea-mirror-backup.log
+      - LOG_LEVEL=INFO
+    
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - /opt/gitea/gitea:/data/gitea:ro
+      - /opt/backup/gitea-mirrors:/backup:rw
+      - /var/log/gitea-backup:/logs:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    
+    restart: unless-stopped
+    
+    profiles:
+      - cron
+

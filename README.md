@@ -31,7 +31,21 @@
 
 ## 🎬 Quick Start
 
-### Installation
+### Method 1: Docker (Recommended)
+
+```bash
+# Using Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f gitea-backup
+```
+
+See [Docker Deployment Guide](docs/docker.md) for details.
+
+### Method 2: Direct Installation
+
+#### Installation
 
 ```bash
 # 1. Clone the repository
