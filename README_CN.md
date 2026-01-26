@@ -27,6 +27,7 @@
 - 💾 **节省空间** - 硬链接技术，未改变的文件几乎不占空间
 - 🎯 **精准备份** - 按组织过滤，支持仅备份镜像仓库
 - ⚙️ **灵活配置** - YAML 配置文件 + 环境变量支持
+- 📧 **通知系统** - 邮件/Webhook/企业微信/钉钉通知
 
 ## 🎬 快速开始
 
@@ -114,6 +115,40 @@ alerts:
 logging:
   file: "/var/log/gitea-mirror-backup.log"
   level: "INFO"                     # DEBUG/INFO/WARNING/ERROR
+
+# 通知配置（可选）
+notifications:
+  # 方式1: 使用 webhook（推荐，支持企业微信）
+  webhook:
+    enabled: true
+    url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+    method: "POST"
+    notify_on: "on_alert"           # always/on_error/on_alert
+  
+  # 方式2: 使用专用企业微信配置
+  wecom:
+    enabled: false
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+    notify_on: "on_alert"
+  
+  # 方式3: 邮件通知
+  email:
+    enabled: false
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    smtp_user: "user@example.com"
+    smtp_password: "password"
+    from_addr: "backup@example.com"
+    to_addrs:
+      - "admin@example.com"
+    notify_on: "on_alert"
+  
+  # 方式4: 钉钉通知
+  dingtalk:
+    enabled: false
+    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+    secret: ""                      # 可选，加签密钥
+    notify_on: "on_alert"
 ```
 
 #### 2. 环境变量

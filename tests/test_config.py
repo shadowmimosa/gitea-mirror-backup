@@ -8,15 +8,18 @@ import os
 import sys
 import tempfile
 
+# 导入配置加载器
+from src.config_loader import Config, ConfigLoader
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # 设置 UTF-8 输出（Windows 兼容）
 if sys.platform == 'win32':
     import io
 
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
-# 导入配置加载器
-from config_loader import Config, ConfigLoader
 
 
 def test_default_config():

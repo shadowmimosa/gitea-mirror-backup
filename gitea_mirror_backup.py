@@ -16,11 +16,20 @@ import argparse
 
 # 导入配置加载器
 try:
-    from config_loader import Config
+    from src.config_loader import Config
 except ImportError:
     print("错误: 无法导入配置加载器")
-    print("请确保 config_loader.py 在同一目录下")
+    print("请确保 src/config_loader.py 存在")
     sys.exit(1)
+
+# 导入通知系统（可选）
+try:
+    from src.notifier import NotificationManager
+
+    NOTIFIER_AVAILABLE = True
+except ImportError:
+    NotificationManager = None
+    NOTIFIER_AVAILABLE = False
 
 
 # ============ 日志配置 ============
@@ -55,6 +64,7 @@ def setup_logging(config_instance: Config):
 # 全局变量，稍后初始化
 logger = None
 config = None
+notifier = None
 
 
 # ============ 工具函数 ============
@@ -769,6 +779,68 @@ esac
 
 
 # ============ 报告生成 ============
+def send_backup_notification(processed_count: int, skipped_count: int):
+    """发送备份通知"""
+    if not notifier:
+        return
+
+    backup_root = Path(config.BACKUP_ROOT)
+    need_review_file = backup_root / ".need_review"
+    has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
+
+    # 收集统计信息
+    total_repos = 0
+    total_commits = 0
+    total_snapshots = 0
+    alert_repos = []
+
+    for org_dir in backup_root.iterdir():
+        if not org_dir.is_dir() or org_dir.name.startswith('.'):
+            continue
+        for repo_dir in org_dir.iterdir():
+            if not repo_dir.is_dir():
+                continue
+            total_repos += 1
+
+            # 统计快照
+            snapshot_dir = repo_dir / "snapshots"
+            if snapshot_dir.exists():
+                total_snapshots += len(
+                    [s for s in snapshot_dir.iterdir() if s.is_dir()]
+                )
+
+            # 统计提交数
+            commit_file = repo_dir / ".commit_tracking"
+            if commit_file.exists():
+                try:
+                    commits = int(commit_file.read_text().strip())
+                    total_commits += commits
+                except Exception:
+                    pass
+
+            # 检查异常
+            alert_file = repo_dir / ".alerts"
+            if alert_file.exists():
+                repo_name = f"{org_dir.name}/{repo_dir.name}"
+                alert_repos.append(repo_name)
+
+    # 构建报告数据
+    report_data = {
+        'total_repos': total_repos,
+        'total_commits': total_commits,
+        'total_snapshots': total_snapshots,
+        'processed_count': processed_count,
+        'skipped_count': skipped_count,
+        'has_alerts': has_alerts,
+        'alert_repos': alert_repos,
+        'total_size_mb': 0,  # 可以添加大小统计
+    }
+
+    # 发送通知
+    notifier.send_backup_report(report_data)
+    logger.info("备份通知已发送")
+
+
 def cleanup_old_reports():
     """清理旧报告（跳过被保护的报告）"""
     report_dir = Path(config.REPORT_DIR)
@@ -1189,6 +1261,13 @@ def main():
     # 清理旧报告
     cleanup_old_reports()
 
+    # 发送通知
+    if notifier:
+        try:
+            send_backup_notification(processed_count, skipped_count)
+        except Exception as e:
+            logger.error(f"发送通知失败: {e}")
+
     logger.info("=" * 50)
     logger.info("备份任务完成")
     logger.info("=" * 50)
@@ -1235,6 +1314,18 @@ if __name__ == "__main__":
 
         # 初始化日志
         logger = setup_logging(config)
+
+        # 初始化通知系统
+        if NOTIFIER_AVAILABLE:
+            try:
+                notifier = NotificationManager(config)
+                logger.info("通知系统已初始化")
+            except Exception as e:
+                logger.warning(f"通知系统初始化失败: {e}")
+                notifier = None
+        else:
+            notifier = None
+            logger.info("通知系统不可用（未安装 requests 库）")
 
         # 显示配置
         if args.show_config:
