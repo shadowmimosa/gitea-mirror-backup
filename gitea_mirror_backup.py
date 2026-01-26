@@ -233,15 +233,23 @@ class RepositoryBackup:
 
             logger.info(f"  创建快照: {self.full_name}")
 
-            # 使用硬链接创建快照 (cp -al)
+            # 尝试使用硬链接创建快照 (cp -al)，如果失败则使用普通复制
             result = run_command(
                 ['cp', '-al', str(self.repo_path), str(snapshot_path)], check=False
             )
 
             if result.returncode != 0:
-                logger.error(f"  ✗ 快照失败: {self.full_name}")
-                logger.error(f"  错误: {result.stderr}")
-                return None
+                # 硬链接失败（可能是跨文件系统），使用普通复制
+                if "Invalid cross-device link" in result.stderr or "cross-device" in result.stderr.lower():
+                    logger.warning("  ⚠️  无法使用硬链接（跨文件系统），使用普通复制...")
+                    result = run_command(
+                        ['cp', '-a', str(self.repo_path), str(snapshot_path)], check=False
+                    )
+
+                if result.returncode != 0:
+                    logger.error(f"  ✗ 快照失败: {self.full_name}")
+                    logger.error(f"  错误: {result.stderr}")
+                    return None
 
             # 记录元数据
             meta_file = snapshot_path / ".snapshot_meta"
