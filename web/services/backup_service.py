@@ -122,21 +122,32 @@ class BackupService:
             "status": "warning" if has_alert else "success",
         }
 
-    def get_snapshots(self, repository: Optional[str] = None) -> List[Dict]:
+    def get_snapshots(
+        self,
+        repository: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 10,
+        include_size: bool = False,
+    ) -> List[Dict]:
         """
-        获取快照列表
+        获取快照列表（支持分页）
         扫描 BACKUP_ROOT/{owner}/{repo_name}/snapshots/ 目录
 
         Args:
             repository: 仓库全名 "owner/repo"（可选，不指定则返回所有快照）
+            page: 页码（从 1 开始）
+            page_size: 每页数量
+            include_size: 是否计算大小（默认 False，可以大幅提升速度）
 
         Returns:
             快照信息列表
         """
-        snapshots = []
+
+        # 第一步：快速收集所有快照的基本信息（不计算大小）
+        snapshot_basics = []
 
         if not self.backup_base_path.exists():
-            return snapshots
+            return []
 
         # 如果指定了仓库，只扫描该仓库
         if repository:
@@ -145,8 +156,8 @@ class BackupService:
                 owner, repo_name = parts
                 repo_dir = self.backup_base_path / owner / repo_name
                 if repo_dir.exists():
-                    snapshots.extend(
-                        self._get_repo_snapshots(owner, repo_name, repo_dir)
+                    snapshot_basics.extend(
+                        self._get_repo_snapshots_basic(owner, repo_name, repo_dir)
                     )
         else:
             # 扫描所有仓库的快照
@@ -158,13 +169,32 @@ class BackupService:
                     if not repo_dir.is_dir():
                         continue
 
-                    snapshots.extend(
-                        self._get_repo_snapshots(
+                    snapshot_basics.extend(
+                        self._get_repo_snapshots_basic(
                             owner_dir.name, repo_dir.name, repo_dir
                         )
                     )
 
-        return sorted(snapshots, key=lambda x: x["created_at"], reverse=True)
+        # 第二步：按创建时间倒序排序
+        snapshot_basics.sort(key=lambda x: x["created_at"], reverse=True)
+
+        # 第三步：只对当前页的快照计算大小（如果需要）
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_snapshots = snapshot_basics[start_idx:end_idx]
+
+        # 第四步：如果需要大小信息，只计算当前页的
+        if include_size:
+            for i, snapshot in enumerate(page_snapshots):
+                snapshot['size'] = self._calculate_snapshot_size(snapshot['_path'])
+                del snapshot['_path']  # 删除内部使用的路径字段
+        else:
+            # 不计算大小，设为 0
+            for snapshot in page_snapshots:
+                snapshot['size'] = 0
+                del snapshot['_path']
+
+        return page_snapshots
 
     def _get_repo_snapshots(
         self, owner: str, repo_name: str, repo_dir: Path
@@ -183,7 +213,6 @@ class BackupService:
             # 读取快照元数据
             meta_file = snapshot_dir / ".snapshot_meta"
             created_at = datetime.fromtimestamp(snapshot_dir.stat().st_mtime)
-            commit_count = 0
 
             if meta_file.exists():
                 try:
@@ -192,21 +221,30 @@ class BackupService:
                         if line.startswith('timestamp='):
                             timestamp_str = line.split('=', 1)[1]
                             created_at = datetime.fromisoformat(timestamp_str)
-                        elif line.startswith('commit_count='):
-                            commit_count = int(line.split('=', 1)[1])
+                            break  # 只需要时间戳，找到后立即退出
                 except Exception:
                     pass
 
             # 检查是否受保护
             is_protected = (snapshot_dir / ".protected").exists()
 
-            # 计算快照大小（这可能很慢，可以考虑缓存）
+            # 使用 du 命令快速获取目录大小（比 Python 递归快得多）
+            size = 0
             try:
-                size = sum(
-                    f.stat().st_size for f in snapshot_dir.rglob("*") if f.is_file()
+                result = subprocess.run(
+                    ['du', '-sb', str(snapshot_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
+                if result.returncode == 0:
+                    size = int(result.stdout.split()[0])
             except Exception:
-                size = 0
+                # 如果 du 命令失败，使用目录的 stat 大小作为估算（不准确但很快）
+                try:
+                    size = snapshot_dir.stat().st_size
+                except Exception:
+                    size = 0
 
             snapshot_info = {
                 "id": snapshot_dir.name,
@@ -214,13 +252,126 @@ class BackupService:
                 "created_at": created_at,
                 "size": size,
                 "is_protected": is_protected,
-                "file_count": 0,  # 可以通过遍历获取，但会很慢
-                "commit_count": commit_count,
                 "status": "protected" if is_protected else "success",
             }
             snapshots.append(snapshot_info)
 
         return snapshots
+
+    def _get_repo_snapshots_basic(
+        self, owner: str, repo_name: str, repo_dir: Path
+    ) -> List[Dict]:
+        """快速获取单个仓库的所有快照基本信息（不计算大小）"""
+        snapshots = []
+        snapshots_dir = repo_dir / "snapshots"
+
+        if not snapshots_dir.exists():
+            return snapshots
+
+        for snapshot_dir in snapshots_dir.iterdir():
+            if not snapshot_dir.is_dir():
+                continue
+
+            # 只读取最基本的信息
+            created_at = datetime.fromtimestamp(snapshot_dir.stat().st_mtime)
+
+            # 尝试从元数据获取更准确的时间
+            meta_file = snapshot_dir / ".snapshot_meta"
+            if meta_file.exists():
+                try:
+                    meta_content = meta_file.read_text()
+                    for line in meta_content.splitlines():
+                        if line.startswith('timestamp='):
+                            timestamp_str = line.split('=', 1)[1]
+                            created_at = datetime.fromisoformat(timestamp_str)
+                            break
+                except Exception:
+                    pass
+
+            # 检查是否受保护
+            is_protected = (snapshot_dir / ".protected").exists()
+
+            snapshot_info = {
+                "id": snapshot_dir.name,
+                "repository": f"{owner}/{repo_name}",
+                "created_at": created_at,
+                "is_protected": is_protected,
+                "status": "protected" if is_protected else "success",
+                "_path": snapshot_dir,  # 保存路径用于后续计算大小
+            }
+            snapshots.append(snapshot_info)
+
+        return snapshots
+
+    def _calculate_snapshot_size(self, snapshot_path: Path) -> int:
+        """计算单个快照的大小"""
+        import platform
+
+        # 在 Unix/Linux 系统上使用 du 命令（更快）
+        if platform.system() != 'Windows':
+            try:
+                result = subprocess.run(
+                    ['du', '-sb', str(snapshot_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    return int(result.stdout.split()[0])
+            except Exception:
+                pass
+
+        # Windows 或 du 命令失败时，使用 Python 递归计算
+        try:
+            total_size = 0
+            for item in snapshot_path.rglob('*'):
+                if item.is_file():
+                    try:
+                        total_size += item.stat().st_size
+                    except (OSError, PermissionError):
+                        pass
+            return total_size
+        except Exception:
+            return 0
+
+    def count_snapshots(self, repository: Optional[str] = None) -> int:
+        """
+        获取快照总数（快速，不计算大小）
+
+        Args:
+            repository: 仓库全名 "owner/repo"（可选）
+
+        Returns:
+            快照总数
+        """
+        count = 0
+
+        if not self.backup_base_path.exists():
+            return count
+
+        if repository:
+            parts = repository.split('/')
+            if len(parts) == 2:
+                owner, repo_name = parts
+                repo_dir = self.backup_base_path / owner / repo_name
+                if repo_dir.exists():
+                    snapshots_dir = repo_dir / "snapshots"
+                    if snapshots_dir.exists():
+                        count = len([s for s in snapshots_dir.iterdir() if s.is_dir()])
+        else:
+            for owner_dir in self.backup_base_path.iterdir():
+                if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
+                    continue
+
+                for repo_dir in owner_dir.iterdir():
+                    if not repo_dir.is_dir():
+                        continue
+
+                    snapshots_dir = repo_dir / "snapshots"
+                    if snapshots_dir.exists():
+                        count += len([s for s in snapshots_dir.iterdir() if s.is_dir()])
+
+        return count
 
     def get_reports(self) -> List[Dict]:
         """

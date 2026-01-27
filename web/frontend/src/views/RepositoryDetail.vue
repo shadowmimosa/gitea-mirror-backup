@@ -71,11 +71,27 @@
         :columns="columns"
         :data="snapshots"
         :loading="loading"
-        :pagination="pagination"
+        :pagination="false"
         :row-key="(row: any) => row.id"
         v-model:checked-row-keys="selectedSnapshots"
         @update:checked-row-keys="handleCheck"
       />
+      
+      <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+        <n-pagination
+          v-model:page="currentPage"
+          v-model:page-size="pageSize"
+          :item-count="totalCount"
+          :page-sizes="[10, 20, 50, 100]"
+          show-size-picker
+          @update:page="handlePageChange"
+          @update:page-size="handlePageSizeChange"
+        >
+          <template #prefix="{ itemCount }">
+            共 {{ itemCount }} 条
+          </template>
+        </n-pagination>
+      </div>
     </n-card>
   </div>
 </template>
@@ -85,7 +101,7 @@ import { ref, h, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { 
   NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, 
-  NDivider, NDescriptions, NDescriptionsItem, NText, useMessage, useDialog 
+  NDivider, NDescriptions, NDescriptionsItem, NText, NPagination, useMessage, useDialog 
 } from 'naive-ui'
 import { RefreshOutline, TrashOutline, ArrowBackOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
@@ -99,6 +115,9 @@ const loading = ref(false)
 const snapshots = ref([])
 const repoInfo = ref<any>(null)
 const selectedSnapshots = ref<string[]>([])
+const totalCount = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const hasProtectedSelected = computed(() => {
   return snapshots.value.some((s: any) => 
@@ -174,8 +193,17 @@ const columns = [
   }
 ]
 
-const pagination = {
-  pageSize: 10
+function handlePageChange(page: number) {
+  console.log('切换到页面:', page)
+  selectedSnapshots.value = []  // 切换页面时清空选中
+  fetchSnapshots()
+}
+
+function handlePageSizeChange(size: number) {
+  console.log('更新页面大小:', size)
+  currentPage.value = 1
+  selectedSnapshots.value = []  // 切换页面大小时清空选中
+  fetchSnapshots()
 }
 
 function handleCheck(keys: Array<string | number>) {
@@ -185,8 +213,22 @@ function handleCheck(keys: Array<string | number>) {
 async function fetchSnapshots() {
   loading.value = true
   try {
-    // 使用仓库详情接口，一次性获取仓库信息和快照列表
-    const response = await api.get(`/repositories/${encodeURIComponent(repositoryName.value)}`)
+    // 先获取快照总数
+    const countResponse = await api.get('/snapshots/count', {
+      params: {
+        repository: repositoryName.value
+      }
+    })
+    totalCount.value = countResponse.data.count
+    
+    // 获取仓库详情和当前页快照
+    const response = await api.get(`/repositories/${encodeURIComponent(repositoryName.value)}`, {
+      params: {
+        page: currentPage.value,
+        page_size: pageSize.value,
+        include_size: true
+      }
+    })
     repoInfo.value = response.data
     snapshots.value = response.data.snapshots || []
   } catch (error) {

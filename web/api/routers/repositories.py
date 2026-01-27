@@ -44,6 +44,9 @@ async def list_repositories(
 @router.get("/{full_name:path}", response_model=RepositoryDetail, summary="获取仓库详情")
 async def get_repository(
     full_name: str,
+    page: int = 1,
+    page_size: int = 10,
+    include_size: bool = False,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
 ):
@@ -51,6 +54,9 @@ async def get_repository(
     获取指定仓库的详细信息
 
     - **full_name**: 仓库全名（格式：owner/repo）
+    - **page**: 页码（从 1 开始，默认 1）
+    - **page_size**: 每页数量（默认 10）
+    - **include_size**: 是否计算快照大小（默认 False）
     """
     repositories = backup_service.get_repositories()
     repo = next((r for r in repositories if r["full_name"] == full_name), None)
@@ -60,8 +66,13 @@ async def get_repository(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"仓库 {full_name} 不存在"
         )
 
-    # 获取快照列表
-    snapshots = backup_service.get_snapshots(repository=full_name)
+    # 获取快照列表（支持分页）
+    snapshots = backup_service.get_snapshots(
+        repository=full_name,
+        page=page,
+        page_size=page_size,
+        include_size=include_size
+    )
 
     # 获取最近日志（简化处理）
     recent_logs = []

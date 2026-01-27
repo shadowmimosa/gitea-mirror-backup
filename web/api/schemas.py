@@ -214,8 +214,7 @@ class SnapshotInfo(BaseModel):
     repository: str
     created_at: datetime
     size: int  # 字节
-    file_count: int
-    commit_count: int
+    is_protected: bool = False
     status: str
 
 

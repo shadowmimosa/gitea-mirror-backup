@@ -4,6 +4,109 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.3.3] - 2026-01-27
+
+### Added
+
+* 📄 **Markdown 报告渲染支持**
+
+  * 新增 Markdown 报告展示能力
+  * 适配暗色主题，使用暗色 Markdown 样式
+  * 报告区域背景透明，与系统主题保持一致
+
+* 👁️ **仓库与快照操作增强**
+
+  * 支持分页大小选择（10 / 20 / 50 / 100）
+  * 新增快照保护状态展示
+  * 新增快照总数展示，信息更完整
+
+### Fixed
+
+* 🐛 **分页与数据显示修复**
+
+  * 修复快照列表分页显示异常问题
+  * 修复仓库详情页面分页逻辑不一致的问题
+  * 修复仓库详情页部分快照数据显示错误
+  * 修复多处 TypeScript 类型错误与 UI 交互问题
+
+* 🧩 **跨平台兼容性修复**
+
+  * 修复 Windows 系统下快照大小计算异常问题
+  * Windows 环境下自动回退为 Python 递归计算方式
+
+### Changed
+
+* ⚡ **性能与架构优化**
+
+  * 快照列表改为服务端分页，查询性能提升 10–100 倍
+  * 新增快照总数接口，支持前端分页计算
+  * 快照大小改为按需计算，仅统计当前页数据
+  * Linux / Unix 环境使用 `du` 命令计算快照大小，替代 Python 递归遍历
+
+* 🎨 **前端体验与布局优化**
+
+  * 重构分页逻辑，使用独立分页器组件统一 UI 风格
+  * 提升整体可读性与操作一致性
+
+### Technical Details
+
+* 分页机制：
+
+  * 快照列表与仓库详情均支持服务端分页
+  * 接口支持 `page`、`pageSize` 参数
+* 快照大小计算策略：
+
+  * Linux：优先使用 `du` 命令
+  * Windows：自动降级为 Python 递归统计
+* 本次更新未引入新的第三方依赖
+
+## [1.3.2] - 2026-01-27
+
+### Fixed
+
+* 🌙 **Markdown 暗色主题适配**
+
+  * 将 Markdown 样式从 `github-markdown-light.css` 切换为 `github-markdown-dark.css`
+  * 修复暗色主题下背景不协调问题（背景改为透明）
+  * 修复表格、代码块在暗色模式下可读性不足的问题
+
+    * 表格边框使用半透明白色
+    * 代码块背景使用半透明白色
+    * 表格斑马纹使用半透明背景
+  * Markdown 报告区域现已与系统暗色主题完美融合
+
+* 📐 **仪表板布局问题修复**
+
+  * 移除 `max-width: 1400px` 与 `margin: 0 auto` 的布局限制
+  * 移除局部 `padding: 20px`（统一由外层布局控制）
+  * 修复仪表板页面与仓库管理、快照管理页面宽度不一致的问题
+
+### Added
+
+* 👁️ **仓库管理新增查看入口**
+
+  * 仓库列表新增「操作」列
+  * 添加“查看”按钮，使用 `EyeOutline` 图标
+  * 支持一键跳转至仓库详情页面
+  * 提升仓库列表的可操作性与直观性
+
+### Changed
+
+* 🎨 **前端视觉一致性优化**
+
+  * 统一仪表板与其他管理页面的宽度与留白策略
+  * 提升暗色主题下整体 UI 的一致性与可读性
+
+### Technical Details
+
+* Markdown 样式适配：
+
+  * 使用 `github-markdown-dark.css`
+  * 自定义覆盖样式实现暗色主题无缝融合
+* 仓库列表操作列：
+
+  * 新增图标按钮组件，无需额外依赖
+* 本次更新不新增第三方依赖（`marked` 与 `github-markdown-css` 已在此前版本引入）
 
 ## [1.3.1] - 2026-01-26
 

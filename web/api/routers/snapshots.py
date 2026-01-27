@@ -25,16 +25,42 @@ def get_backup_service() -> BackupService:
 @router.get("", response_model=List[SnapshotInfo], summary="获取快照列表")
 async def list_snapshots(
     repository: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 10,
+    include_size: bool = False,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
 ):
     """
-    获取快照列表
+    获取快照列表（支持分页）
 
     - **repository**: 仓库名称（可选，不指定则返回所有快照）
+    - **page**: 页码（从 1 开始，默认 1）
+    - **page_size**: 每页数量（默认 10）
+    - **include_size**: 是否计算大小（默认 False，设为 True 会变慢）
     """
-    snapshots = backup_service.get_snapshots(repository=repository)
+    snapshots = backup_service.get_snapshots(
+        repository=repository,
+        page=page,
+        page_size=page_size,
+        include_size=include_size
+    )
     return snapshots
+
+
+@router.get("/count", summary="获取快照总数")
+async def count_snapshots(
+    repository: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    backup_service: BackupService = Depends(get_backup_service),
+):
+    """
+    获取快照总数
+
+    - **repository**: 仓库名称（可选，不指定则返回所有快照总数）
+    """
+    count = backup_service.count_snapshots(repository=repository)
+    return {"count": count}
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotInfo, summary="获取快照详情")
