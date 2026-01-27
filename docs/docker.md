@@ -46,7 +46,7 @@ docker compose up -d cron
 # 同时启动 Web + 定时任务
 docker compose up -d web cron
 
-# 一键启动所有功能（Web + 定时任务）
+# 一键启动所有长期运行的服务（Web + 定时任务，不包含手动备份）
 docker compose --profile full up -d
 
 # 查看日志
@@ -421,7 +421,7 @@ docker stack deploy -c docker-compose.yml gitea-backup
 | 仅定时任务 | `docker compose up -d cron` | `docker compose stop cron` | 自动化备份，无需 Web | 低（~100MB） |
 | 仅 Web | `docker compose up -d web` | `docker compose stop web` | 查看历史，手动触发 | 低（~150MB） |
 | Web + 定时 | `docker compose up -d web cron` | `docker compose down web cron` | 生产环境推荐 | 中（~250MB） |
-| 完整功能 | `docker compose --profile full up -d` | `docker compose --profile full down` | 同上 | 中（~250MB） |
+| 完整功能 | `docker compose --profile full up -d` | `docker compose --profile full down` | Web + 定时任务（不含手动备份） | 中（~250MB） |
 
 ### 推荐配置
 
@@ -448,10 +448,12 @@ docker compose up -d web cron
 ### Q: 为什么 `docker compose up` 不启动任何服务？
 
 A: 这是设计行为。为了避免意外启动不需要的服务，所有服务都使用了 `profiles`。请根据需要选择：
-- 手动备份：`docker compose run --rm backup`
+- 手动备份：`docker compose run --rm backup`（一次性任务，执行完自动退出）
 - 启动 Web：`docker compose up -d web`
 - 启动定时任务：`docker compose up -d cron`
-- 启动所有：`docker compose --profile full up -d`
+- 启动所有长期服务：`docker compose --profile full up -d`（Web + 定时任务，不含手动备份）
+
+> **注意**：`backup` 服务是一次性任务，不会被 `--profile full` 启动，需要手动执行。
 
 ### Q: 为什么 `docker compose down` 不能停止服务？
 

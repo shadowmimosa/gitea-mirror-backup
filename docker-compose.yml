@@ -169,7 +169,7 @@ services:
     image: gitea-mirror-backup-web:latest
     container_name: gitea-backup-web
     ports:
-      - "8000:8000"  # 【可修改】宿主机端口:容器端口
+      - "8010:8000"  # 【可修改】宿主机端口:容器端口
     environment:
       - TZ=Asia/Shanghai
       # 【重要】生产环境请修改此密钥
