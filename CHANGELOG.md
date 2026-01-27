@@ -4,6 +4,140 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.0] - 2026-01-27
+
+### Added
+
+- 🌐 **Web 管理界面** - 基于 FastAPI + Vue 3 的现代化 Web 管理系统
+  - 用户认证系统（JWT Token）
+  - 仪表板 - 实时统计和趋势图表
+  - 仓库管理 - 查看所有备份仓库信息
+  - 仓库详情页 - 查看单个仓库的所有快照
+  - 快照管理 - 浏览、删除快照
+  - 报告查看 - Markdown 格式报告展示
+  - 暗色主题界面设计
+
+- 📊 **仪表板功能**
+  - 总仓库数、快照数、磁盘使用量统计
+  - 最后备份时间显示
+  - 备份成功率计算
+  - 异常仓库数量统计
+
+- 🗂️ **仓库管理功能**
+  - 显示仓库全名（owner/repo 格式）
+  - 显示提交数、快照数、受保护快照数
+  - 显示磁盘使用量和最后备份时间
+  - 异常状态标识（⚠️ 有异常）
+  - 点击仓库名跳转到详情页
+
+- 📸 **快照管理功能**
+  - 查看所有快照或按仓库过滤
+  - 显示快照大小、创建时间、保护状态
+  - 单个删除和批量删除快照
+  - 受保护的快照无法删除（自动禁用）
+  - 批量操作时自动跳过受保护快照
+
+- 🔍 **仓库详情页**
+  - 显示仓库完整信息（提交数、快照数、磁盘使用等）
+  - 列出该仓库的所有快照
+  - 支持快照的多选和批量删除
+  - 受保护快照的可视化标识（🔒）
+
+- 📝 **报告查看功能**
+  - Markdown 格式报告渲染
+  - 暗色主题适配
+  - 显示报告创建时间和大小
+  - 受保护报告标识
+
+- 🐳 **Docker 部署支持**
+  - Dockerfile.web - 多阶段构建优化
+  - docker-compose.web.yml - Web 服务编排
+  - 前后端集成部署
+  - 数据持久化配置
+
+### Changed
+
+- 🏗️ **项目结构优化**
+  - 新增 `web/` 目录存放 Web 应用代码
+  - `web/api/` - FastAPI 后端代码
+  - `web/frontend/` - Vue 3 前端代码
+  - `web/services/` - 业务逻辑服务
+  - `web/models/` - 数据库模型
+  - `web/utils/` - 工具函数
+
+- 🔧 **BackupService 适配**
+  - 适配实际的备份目录结构（{owner}/{repo_name}/snapshots/）
+  - 读取 `.commit_tracking` 获取提交数
+  - 读取 `.size_tracking` 获取仓库大小
+  - 检测 `.protected` 文件判断快照保护状态
+  - 检测 `.alerts` 文件判断仓库异常状态
+
+- 🎨 **前端体验优化**
+  - 使用 Naive UI 组件库实现暗色主题
+  - 响应式布局设计
+  - 统一的分页和表格样式
+  - 友好的错误提示和确认对话框
+  - 批量操作的智能提示
+
+### Fixed
+
+- 🐛 **目录结构兼容性修复**
+  - 修复 Web 界面期望的目录结构与实际备份结构不匹配的问题
+  - 修复仪表板统计数据为 0 的问题
+  - 修复快照删除 API 缺少 repository 参数的问题
+
+- 🔒 **受保护资源处理**
+  - 受保护的快照无法被选择和删除
+  - 批量删除时自动跳过受保护的快照
+  - 清晰的保护状态可视化标识
+
+### Technical Details
+
+**后端技术栈：**
+- FastAPI - 现代化 Python Web 框架
+- SQLAlchemy - ORM 数据库操作
+- JWT - 用户认证
+- bcrypt - 密码加密
+- Pydantic - 数据验证
+
+**前端技术栈：**
+- Vue 3 - 渐进式 JavaScript 框架
+- TypeScript - 类型安全
+- Vite - 快速构建工具
+- Naive UI - Vue 3 组件库
+- Pinia - 状态管理
+- Vue Router - 路由管理
+- Axios - HTTP 客户端
+- Marked - Markdown 渲染
+
+**部署方式：**
+```bash
+# 构建并启动 Web 服务
+docker-compose -f docker-compose.web.yml up -d
+
+# 访问 Web 界面
+http://localhost:8000
+
+# 默认账号
+用户名: admin
+密码: admin123
+```
+
+### Documentation
+
+- 📖 新增 `docs/web-usage.md` - Web 管理界面使用文档
+- 📖 更新 README 添加 Web 管理界面说明
+
+### Security
+
+- 🔐 JWT Token 认证机制
+- 🔐 密码 bcrypt 加密存储
+- 🔐 管理员权限控制（删除操作需要管理员权限）
+- 🔐 受保护资源的删除保护
+
+---
+
 ## [1.3.3] - 2026-01-27
 
 ### Added

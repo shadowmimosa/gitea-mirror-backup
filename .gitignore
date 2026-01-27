@@ -40,3 +40,7 @@ desktop.ini
 *.bak
 *.backup
 *~
+
+# 数据文件
+data/
+*.db
