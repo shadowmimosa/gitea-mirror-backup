@@ -53,8 +53,11 @@ docker compose --profile full up -d
 docker compose logs -f web
 docker compose logs -f cron
 
-# 停止服务
-docker compose down
+# 停止服务（需要指定服务名或 profile）
+docker compose down web cron           # 停止指定的服务
+docker compose --profile full down     # 停止所有服务
+docker compose stop web                # 仅停止 web 服务
+docker compose stop cron               # 仅停止 cron 服务
 ```
 
 > **注意**：`docker compose up` 不会启动任何服务，这是设计行为。请根据需要选择上述命令。
@@ -412,13 +415,13 @@ docker stack deploy -c docker-compose.yml gitea-backup
 
 ### 模式对比
 
-| 使用模式 | 命令 | 适用场景 | 资源占用 |
-|---------|------|---------|---------|
-| 手动备份 | `docker compose run --rm backup` | 测试、临时备份 | 仅运行时占用 |
-| 仅定时任务 | `docker compose up -d cron` | 自动化备份，无需 Web | 低（~100MB） |
-| 仅 Web | `docker compose up -d web` | 查看历史，手动触发 | 低（~150MB） |
-| Web + 定时 | `docker compose up -d web cron` | 生产环境推荐 | 中（~250MB） |
-| 完整功能 | `docker compose --profile full up -d` | 同上 | 中（~250MB） |
+| 使用模式 | 启动命令 | 停止命令 | 适用场景 | 资源占用 |
+|---------|---------|---------|---------|---------|
+| 手动备份 | `docker compose run --rm backup` | 自动退出 | 测试、临时备份 | 仅运行时占用 |
+| 仅定时任务 | `docker compose up -d cron` | `docker compose stop cron` | 自动化备份，无需 Web | 低（~100MB） |
+| 仅 Web | `docker compose up -d web` | `docker compose stop web` | 查看历史，手动触发 | 低（~150MB） |
+| Web + 定时 | `docker compose up -d web cron` | `docker compose down web cron` | 生产环境推荐 | 中（~250MB） |
+| 完整功能 | `docker compose --profile full up -d` | `docker compose --profile full down` | 同上 | 中（~250MB） |
 
 ### 推荐配置
 
@@ -449,6 +452,23 @@ A: 这是设计行为。为了避免意外启动不需要的服务，所有服�
 - 启动 Web：`docker compose up -d web`
 - 启动定时任务：`docker compose up -d cron`
 - 启动所有：`docker compose --profile full up -d`
+
+### Q: 为什么 `docker compose down` 不能停止服务？
+
+A: 因为服务使用了 `profiles`，需要明确指定服务名或 profile：
+
+```bash
+# ❌ 这样不会停止使用 profile 的服务
+docker compose down
+
+# ✅ 正确的停止方式
+docker compose down web cron           # 停止指定服务
+docker compose --profile full down     # 停止所有服务
+docker compose stop cron               # 仅停止 cron
+
+# 查看当前运行的服务
+docker compose ps
+```
 
 ### Q: 必须要 config.yaml 文件吗？
 
