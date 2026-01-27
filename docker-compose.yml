@@ -29,13 +29,13 @@ x-common-env: &common-env
   # WEBHOOK_URL: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
   # WEBHOOK_NOTIFY_ON: on_alert
 
-# 共享卷挂载配置
+# 共享卷挂载配置（列表类型的锚点）
 x-common-volumes: &common-volumes
-  # config.yaml 是可选的，如果存在则挂载
-  # - ./config.yaml:/app/config.yaml:ro
   - gitea-data:/shared:rw
   - /var/log/gitea-backup:/logs:rw
   - /var/run/docker.sock:/var/run/docker.sock:ro
+  # config.yaml 是可选的，如果需要则在各服务中单独添加
+  # - ./config.yaml:/app/config.yaml:ro
 
 services:
   # 备份服务 - 仅用于手动执行：docker compose run --rm backup
@@ -47,8 +47,7 @@ services:
     container_name: gitea-backup-oneshot
     environment:
       <<: *common-env
-    volumes:
-      <<: *common-volumes
+    volumes: *common-volumes
     network_mode: bridge
     # 不设置 restart，因为这是一次性任务
     # 使用 profiles 防止 docker compose up 时自动启动
@@ -112,8 +111,7 @@ services:
     command: -c "echo '0 2 * * * cd /app && /usr/local/bin/python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
     environment:
       <<: *common-env
-    volumes:
-      <<: *common-volumes
+    volumes: *common-volumes
     restart: unless-stopped
     # 使用 profiles 防止默认启动
     profiles:
