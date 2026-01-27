@@ -24,7 +24,7 @@
 import { ref, h, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NCard, NButton, NDataTable, NIcon, NTag, useMessage } from 'naive-ui'
-import { RefreshOutline } from '@vicons/ionicons5'
+import { RefreshOutline, EyeOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 
 const router = useRouter()
@@ -81,6 +81,24 @@ const columns = [
         return h(NTag, { type: 'warning' }, { default: () => '⚠️ 有异常' })
       }
       return h(NTag, { type: 'success' }, { default: () => '正常' })
+    }
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row: any) => {
+      return h(
+        NButton,
+        {
+          size: 'small',
+          type: 'primary',
+          onClick: () => router.push(`/repositories/${encodeURIComponent(row.full_name)}`)
+        },
+        {
+          icon: () => h(NIcon, null, { default: () => h(EyeOutline) }),
+          default: () => '查看'
+        }
+      )
     }
   }
 ]

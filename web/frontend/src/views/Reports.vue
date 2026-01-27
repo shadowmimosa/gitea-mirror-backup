@@ -36,7 +36,7 @@ import { ref, computed, onMounted, h } from 'vue'
 import { NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, useMessage } from 'naive-ui'
 import { RefreshOutline, DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
-import 'github-markdown-css/github-markdown-light.css'
+import 'github-markdown-css/github-markdown-dark.css'
 import api from '@/api/client'
 
 const message = useMessage()
@@ -160,6 +160,31 @@ onMounted(() => {
 .markdown-body {
   padding: 20px;
   box-sizing: border-box;
+  background-color: transparent !important;
+  color: inherit;
+}
+
+/* 适配暗色主题 */
+.markdown-body table {
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.markdown-body tr {
+  border-color: rgba(255, 255, 255, 0.09);
+  background-color: transparent;
+}
+
+.markdown-body tr:nth-child(2n) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.markdown-body code {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.markdown-body pre {
+  background-color: rgba(255, 255, 255, 0.06);
 }
 </style>
 
