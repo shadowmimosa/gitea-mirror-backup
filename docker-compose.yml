@@ -128,7 +128,7 @@ services:
     
     # 使用 cron 定时执行
     entrypoint: /bin/sh
-    command: -c "echo '0 2 * * * cd /app && python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
+    command: -c "echo '0 2 * * * cd /app && /usr/local/bin/python gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
     
     environment:
       - TZ=Asia/Shanghai
