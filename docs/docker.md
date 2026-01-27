@@ -4,28 +4,60 @@
 
 ### 方式 1: 使用 Docker Compose（推荐）
 
-1. **准备配置文件**
+1. **配置方式选择**
 
+Docker 环境支持两种配置方式，**推荐使用环境变量**：
+
+**方式 A: 使用环境变量（推荐）**
 ```bash
-# 复制配置模板
-cp config.example.yaml config.yaml
-
-# 编辑配置
-vim config.yaml
+# 直接在 docker-compose.yml 中配置环境变量
+# 或者创建 .env 文件
+cat > .env << EOF
+GITEA_DOCKER_CONTAINER=gitea
+BACKUP_ROOT=/shared/backup
+LOG_LEVEL=INFO
+EOF
 ```
 
-2. **启动服务**
+**方式 B: 使用配置文件（可选）**
+```bash
+# 如果你更喜欢用配置文件
+cp config.example.yaml config.yaml
+vim config.yaml
+
+# 然后在 docker-compose.yml 中取消注释配置文件挂载
+# - ./config.yaml:/app/config.yaml:ro
+```
+
+> **配置优先级**：环境变量 > config.yaml > 默认值
+
+2. **选择运行模式**
 
 ```bash
-# 构建并启动
-docker-compose up -d
+# 【推荐】手动执行一次备份（执行完自动退出）
+docker compose run --rm backup
+
+# 启动 Web 管理界面（可选）
+docker compose up -d web
+
+# 启动定时任务（可选，每天凌晨 2 点自动备份）
+docker compose up -d cron
+
+# 同时启动 Web + 定时任务
+docker compose up -d web cron
+
+# 一键启动所有功能（Web + 定时任务）
+docker compose --profile full up -d
 
 # 查看日志
-docker-compose logs -f gitea-backup
+docker compose logs -f web
+docker compose logs -f cron
 
 # 停止服务
-docker-compose down
+docker compose down
 ```
+
+> **注意**：`docker compose up` 不会启动任何服务，这是设计行为。请根据需要选择上述命令。
 
 ### 方式 2: 使用 Docker 命令
 
@@ -67,11 +99,13 @@ docker run -d \
 
 ## ⚙️ 配置
 
-### 环境变量
+### 配置方式
 
-所有配置都可以通过环境变量设置：
+#### 方式 1: 环境变量（推荐用于 Docker）
 
-```yaml
+所有配置都可以通过环境变量设置，**这是 Docker 环境的推荐方式**：
+
+```bash
 # Gitea 配置
 GITEA_DOCKER_CONTAINER=gitea
 GITEA_DATA_VOLUME=/data/gitea
@@ -101,6 +135,25 @@ WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
 WEBHOOK_NOTIFY_ON=on_alert
 ```
 
+#### 方式 2: 配置文件（可选）
+
+如果你更喜欢使用配置文件，可以挂载 `config.yaml`：
+
+```yaml
+# docker-compose.yml
+services:
+  backup:
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro  # 取消注释这行
+```
+
+**配置优先级**：`环境变量` > `config.yaml` > `默认值`
+
+> **提示**：
+> - Docker 环境推荐使用环境变量（符合 12-factor 原则）
+> - 本地运行脚本时推荐使用 config.yaml（方便管理）
+> - 两种方式可以混用，环境变量会覆盖配置文件
+
 ### 卷挂载
 
 | 宿主机路径 | 容器路径 | 权限 | 说明 |
@@ -113,14 +166,17 @@ WEBHOOK_NOTIFY_ON=on_alert
 
 ## 🕐 定时任务
 
-### 方式 1: 使用 Cron 服务（Docker Compose）
+### 方式 1: 使用 Docker Compose Cron 服务（推荐）
 
 ```bash
-# 启动定时任务服务
-docker-compose --profile cron up -d gitea-backup-cron
+# 启动定时任务服务（每天凌晨 2 点自动执行）
+docker compose up -d cron
 
 # 查看日志
-docker-compose logs -f gitea-backup-cron
+docker compose logs -f cron
+
+# 停止定时任务
+docker compose stop cron
 ```
 
 ### 方式 2: 宿主机 Cron
@@ -130,11 +186,7 @@ docker-compose logs -f gitea-backup-cron
 crontab -e
 
 # 添加定时任务（每天凌晨 2 点执行）
-0 2 * * * docker run --rm \
-  -v /opt/gitea/gitea:/data/gitea:ro \
-  -v /opt/backup/gitea-mirrors:/backup:rw \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  gitea-mirror-backup:latest
+0 2 * * * cd /path/to/gitea-mirror-backup && docker compose run --rm backup >> /var/log/gitea-backup/cron.log 2>&1
 ```
 
 ### 方式 3: Kubernetes CronJob
@@ -200,10 +252,10 @@ ls -lh /backup
 ### 手动执行备份
 
 ```bash
-# Docker Compose
-docker-compose run --rm gitea-backup
+# Docker Compose（推荐）
+docker compose run --rm backup
 
-# Docker
+# Docker 命令
 docker run --rm \
   -v /opt/gitea/gitea:/data/gitea:ro \
   -v /opt/backup/gitea-mirrors:/backup:rw \
@@ -291,43 +343,56 @@ deploy:
 4. **定期更新** - 及时更新镜像版本
 5. **日志审计** - 定期检查日志文件
 
-## 📝 示例配置
+## 📝 使用场景示例
 
-### 最小配置
+### 场景 1: 仅手动备份（最简单）
 
-```yaml
-version: '3.8'
-services:
-  gitea-backup:
-    image: gitea-mirror-backup:latest
-    volumes:
-      - /opt/gitea/gitea:/data/gitea:ro
-      - /opt/backup:/backup:rw
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      - GITEA_DOCKER_CONTAINER=gitea
-      - BACKUP_ROOT=/backup
+适合：偶尔手动执行备份，不需要 Web 界面和自动化
+
+```bash
+# 执行一次备份
+docker compose run --rm backup
 ```
 
-### 完整配置（带通知）
+### 场景 2: 定时自动备份
 
-```yaml
-version: '3.8'
-services:
-  gitea-backup:
-    image: gitea-mirror-backup:latest
-    volumes:
-      - /opt/gitea/gitea:/data/gitea:ro
-      - /opt/backup:/backup:rw
-      - /var/log/gitea-backup:/logs:rw
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      - GITEA_DOCKER_CONTAINER=gitea
-      - BACKUP_ROOT=/backup
-      - LOG_LEVEL=INFO
-      - WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
-      - WEBHOOK_NOTIFY_ON=on_alert
-    restart: unless-stopped
+适合：需要定期自动备份，不需要 Web 管理界面
+
+```bash
+# 启动定时任务服务
+docker compose up -d cron
+
+# 查看执行日志
+docker compose logs -f cron
+```
+
+### 场景 3: Web 管理 + 手动备份
+
+适合：需要通过 Web 界面查看备份状态和历史记录
+
+```bash
+# 启动 Web 服务
+docker compose up -d web
+
+# 访问 http://localhost:8000
+
+# 需要时手动执行备份
+docker compose run --rm backup
+```
+
+### 场景 4: 完整功能（Web + 定时任务）
+
+适合：生产环境，需要自动化备份和 Web 管理
+
+```bash
+# 方式 1: 分别启动
+docker compose up -d web cron
+
+# 方式 2: 使用 full profile
+docker compose --profile full up -d
+
+# 访问 Web: http://localhost:8000
+# 定时任务会在每天凌晨 2 点自动执行
 ```
 
 ## 🚀 生产环境部署
@@ -335,12 +400,108 @@ services:
 ### 使用 Docker Swarm
 
 ```bash
+# 启动完整功能
 docker stack deploy -c docker-compose.yml gitea-backup
 ```
 
 ### 使用 Kubernetes
 
 参考 `examples/kubernetes/` 目录中的示例配置。
+
+## 🎯 常见使用模式
+
+### 模式对比
+
+| 使用模式 | 命令 | 适用场景 | 资源占用 |
+|---------|------|---------|---------|
+| 手动备份 | `docker compose run --rm backup` | 测试、临时备份 | 仅运行时占用 |
+| 仅定时任务 | `docker compose up -d cron` | 自动化备份，无需 Web | 低（~100MB） |
+| 仅 Web | `docker compose up -d web` | 查看历史，手动触发 | 低（~150MB） |
+| Web + 定时 | `docker compose up -d web cron` | 生产环境推荐 | 中（~250MB） |
+| 完整功能 | `docker compose --profile full up -d` | 同上 | 中（~250MB） |
+
+### 推荐配置
+
+**开发/测试环境**：
+```bash
+# 手动执行即可
+docker compose run --rm backup
+```
+
+**小型生产环境**：
+```bash
+# 仅定时任务，节省资源
+docker compose up -d cron
+```
+
+**企业生产环境**：
+```bash
+# Web + 定时任务，便于管理和监控
+docker compose up -d web cron
+```
+
+## ❓ 常见问题
+
+### Q: 为什么 `docker compose up` 不启动任何服务？
+
+A: 这是设计行为。为了避免意外启动不需要的服务，所有服务都使用了 `profiles`。请根据需要选择：
+- 手动备份：`docker compose run --rm backup`
+- 启动 Web：`docker compose up -d web`
+- 启动定时任务：`docker compose up -d cron`
+- 启动所有：`docker compose --profile full up -d`
+
+### Q: 必须要 config.yaml 文件吗？
+
+A: **不需要**。配置系统支持三种方式（优先级从高到低）：
+1. **环境变量**（推荐用于 Docker）- 在 `docker-compose.yml` 中配置
+2. **config.yaml**（可选）- 如果需要可以挂载
+3. **默认值** - 内置的合理默认配置
+
+Docker 环境推荐使用环境变量，这样更灵活且符合容器化最佳实践。
+
+### Q: 如何同时使用配置文件和环境变量？
+
+A: 可以混用，环境变量会覆盖配置文件中的值。例如：
+```yaml
+# config.yaml 中设置基础配置
+backup:
+  root: /backup
+  
+# docker-compose.yml 中用环境变量覆盖
+environment:
+  - BACKUP_ROOT=/custom/backup  # 这个会生效
+```
+
+### Q: 如何修改定时任务的执行时间？
+
+A: 编辑 `docker-compose.yml` 中 `cron` 服务的 `command` 部分：
+
+```yaml
+# 默认：每天凌晨 2 点
+command: -c "echo '0 2 * * * ...' | crontab - && cron -f"
+
+# 改为：每天中午 12 点
+command: -c "echo '0 12 * * * ...' | crontab - && cron -f"
+
+# 改为：每 6 小时一次
+command: -c "echo '0 */6 * * * ...' | crontab - && cron -f"
+```
+
+### Q: Web 界面可以触发备份吗？
+
+A: 可以。访问 Web 界面后，可以手动触发备份任务。或者使用命令：
+
+```bash
+docker compose run --rm backup
+```
+
+### Q: 如何查看备份是否成功？
+
+A: 有多种方式：
+1. 查看日志：`docker compose logs -f cron`
+2. 访问 Web 界面查看备份历史
+3. 查看备份目录：`ls -lh /opt/backup/gitea-mirrors`
+4. 查看报告文件：`cat /opt/backup/gitea-mirrors/latest-report.md`
 
 ---
 

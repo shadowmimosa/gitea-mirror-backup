@@ -34,7 +34,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制应用代码
 COPY src/ ./src/
 COPY gitea_mirror_backup.py .
-COPY config.yaml .
+
+# 复制示例配置（可选，仅供参考）
+COPY config.example.yaml ./config.example.yaml
 
 # 创建必要的目录
 RUN mkdir -p /backup /logs
