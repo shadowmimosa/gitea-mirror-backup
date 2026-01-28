@@ -1,5 +1,18 @@
-# Gitea 镜像备份系统配置文件
-# 复制此文件为 config.yaml 并根据实际情况修改
+# ============================================================
+# Gitea 镜像备份系统配置文件 - 直接部署版本
+# ============================================================
+# 
+# 📖 使用说明：
+#   此配置用于直接在宿主机运行（非 Docker）
+#   路径使用宿主机路径
+#   
+#   Docker 部署请使用 config.docker.yaml
+#
+# 📚 使用方法：
+#   cp config.example.yaml config.yaml
+#   vim config.yaml  # 修改路径和配置
+#
+# ============================================================
 
 # Gitea Docker 配置
 gitea:
@@ -9,7 +22,7 @@ gitea:
   # Docker 容器内的 Git 用户（通常是 'git'）
   docker_git_user: "git"
   
-  # Gitea 数据卷路径（宿主机上的路径）
+  # Gitea 数据卷路径（宿主机路径）
   data_volume: "/opt/gitea"
   
   # Gitea 仓库在卷中的相对路径
@@ -20,10 +33,9 @@ backup:
   # 备份根目录（宿主机路径）
   root: "/opt/backup/gitea-mirrors"
   
-  # 只备份特定组织的仓库（留空或注释掉则备份所有）
-  organizations:
-    - "Test"
-  # organizations: []  # 备份所有组织
+  # 只备份特定组织的仓库（留空或空数组则备份所有）
+  organizations: []
+  # organizations: ["Org1", "Org2"]  # 示例：只备份这些组织
   
   # 是否检查镜像仓库（如果为 false，备份所有仓库）
   check_mirror_only: false

@@ -64,14 +64,27 @@ vim config.yaml
 
 Edit `config.yaml` with at least these three settings:
 
+**Direct Deployment**:
 ```yaml
 gitea:
   docker_container: "gitea"              # Your container name
-  data_volume: "/opt/gitea/gitea"        # Data volume path
+  data_volume: "/opt/gitea"              # Host path
 
 backup:
-  root: "/opt/backup/gitea-mirrors"      # Backup storage path
+  root: "/opt/backup/gitea-mirrors"      # Host path
 ```
+
+**Docker Deployment**:
+```yaml
+gitea:
+  docker_container: "gitea"
+  data_volume: "/shared/gitea"           # Container path
+
+backup:
+  root: "/shared/backup"                 # Container path
+```
+
+> 💡 **Tip**: For Docker deployment, use `config.docker.yaml` as template
 
 ### Run
 

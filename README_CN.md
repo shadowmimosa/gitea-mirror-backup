@@ -64,14 +64,27 @@ vim config.yaml
 
 编辑 `config.yaml`，至少配置这三项：
 
+**直接部署**：
 ```yaml
 gitea:
   docker_container: "gitea"              # 你的容器名
-  data_volume: "/opt/gitea/gitea"        # 数据卷路径
+  data_volume: "/opt/gitea"              # 宿主机路径
 
 backup:
-  root: "/opt/backup/gitea-mirrors"      # 备份路径
+  root: "/opt/backup/gitea-mirrors"      # 宿主机路径
 ```
+
+**Docker 部署**：
+```yaml
+gitea:
+  docker_container: "gitea"
+  data_volume: "/shared/gitea"           # 容器内路径
+
+backup:
+  root: "/shared/backup"                 # 容器内路径
+```
+
+> 💡 **提示**：Docker 部署请使用 `config.docker.yaml` 作为模板
 
 ### 运行
 
