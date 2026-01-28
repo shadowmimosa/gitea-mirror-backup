@@ -34,16 +34,25 @@ cp config.yaml config.yaml.backup 2>/dev/null || true
 
 ### 步骤 2: 创建配置目录和文件
 
+**直接部署**：
 ```bash
-# 创建配置目录
-mkdir -p config
-
 # 复制配置模板
-cp config.example.yaml config/config.yaml
+cp config.example.yaml config.yaml
 
 # 复制环境变量模板
 cp env.example .env
 ```
+
+**Docker 部署**：
+```bash
+# 复制 Docker 配置模板（使用容器内路径）
+cp config.docker.yaml config.yaml
+
+# 复制环境变量模板
+cp env.example .env
+```
+
+> **重要**：Docker 部署必须使用 `config.docker.yaml`，不要使用 `config.example.yaml`
 
 ### 步骤 3: 迁移配置
 
