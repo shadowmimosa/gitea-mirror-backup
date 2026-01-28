@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     BACKUP_CONFIG_PATH: str = "/app/config.yaml"
     # 统一使用 BACKUP_ROOT（与备份服务保持一致）
     BACKUP_ROOT: str = "/shared/backup"
+    BACKUP_ROOT: str = "/shared/backup"
 
     # 日志配置
     LOG_LEVEL: str = "INFO"

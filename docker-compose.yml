@@ -5,6 +5,7 @@
 # 📖 快速开始：
 #   1. 修改 volumes.gitea-data.driver_opts.device 为实际路径
 #   2. 复制 env.example 为 .env 并修改配置
+#   2. 复制 env.example 为 .env 并修改配置
 #      cp env.example .env
 #   3. 复制 config.example.yaml 为 config.yaml（可选）
 #      cp config.example.yaml config.yaml
@@ -16,6 +17,7 @@
 #
 # 📚 详细文档：
 #   - 配置说明：docs/configuration.md
+#   - 环境变量：docs/ENV-VARIABLES.md
 #   - 环境变量：docs/ENV-VARIABLES.md
 #   - Docker 指南：docs/docker.md
 #   - 主文档：README_CN.md
@@ -109,6 +111,7 @@ services:
   # 用途：提供 Web 界面查看备份历史、状态和手动触发备份
   # 启动：docker compose up -d web
   # 访问：http://localhost:8010
+  # 访问：http://localhost:8010
   # ============================================================
   web:
     build:
@@ -121,6 +124,7 @@ services:
     environment:
       <<: *common-env
     env_file:
+      - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY 等）
       - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY 等）
     volumes:
       - gitea-data:/shared:ro  # 只读访问备份数据（安全）
