@@ -102,9 +102,37 @@ crontab -e
 
 支持三种配置方式（优先级：环境变量 > 配置文件 > 默认值）：
 
-#### 1. YAML 配置文件（推荐）
+#### 1. 混合配置（推荐）
+
+基础配置放在 `config.yaml`，敏感信息放在 `.env`：
 
 ```yaml
+# config/config.yaml
+gitea:
+  docker_container: "gitea"
+  data_volume: "/shared/gitea"
+
+backup:
+  root: "/shared/backup"
+  organizations: []
+  
+notifications:
+  wecom:
+    enabled: true
+    notify_on: "on_alert"
+```
+
+```bash
+# .env（敏感信息，不提交到 Git）
+SECRET_KEY=your-random-secret-key
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+EMAIL_SMTP_PASSWORD=your-password
+```
+
+#### 2. 纯 YAML 配置
+
+```yaml
+# config.yaml
 gitea:
   docker_container: "gitea"
   docker_git_user: "git"
@@ -132,53 +160,78 @@ logging:
 
 # 通知配置（可选）
 notifications:
-  # 方式1: 使用 webhook（推荐，支持企业微信）
-  webhook:
-    enabled: true
-    url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
-    method: "POST"
-    notify_on: "on_alert"           # always/on_error/on_alert
-  
-  # 方式2: 使用专用企业微信配置
+  # 企业微信
   wecom:
     enabled: false
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+    webhook_url: ""  # 建议使用环境变量 WECOM_WEBHOOK_URL
     notify_on: "on_alert"
   
-  # 方式3: 邮件通知
+  # 钉钉
+  dingtalk:
+    enabled: false
+    webhook_url: ""  # 建议使用环境变量 DINGTALK_WEBHOOK_URL
+    secret: ""       # 建议使用环境变量 DINGTALK_SECRET
+    notify_on: "on_alert"
+  
+  # 邮件
   email:
     enabled: false
     smtp_host: "smtp.example.com"
     smtp_port: 587
-    smtp_user: "user@example.com"
-    smtp_password: "password"
+    smtp_user: ""    # 建议使用环境变量 EMAIL_SMTP_USER
+    smtp_password: "" # 建议使用环境变量 EMAIL_SMTP_PASSWORD
     from_addr: "backup@example.com"
     to_addrs:
       - "admin@example.com"
     notify_on: "on_alert"
   
-  # 方式4: 钉钉通知
-  dingtalk:
+  # 通用 Webhook
+  webhook:
     enabled: false
-    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
-    secret: ""                      # 可选，加签密钥
+    url: ""          # 建议使用环境变量 WEBHOOK_URL
+    method: "POST"
     notify_on: "on_alert"
 ```
 
-#### 2. 环境变量
+#### 3. 环境变量
 
 ```bash
+# 基础配置
 export GITEA_DOCKER_CONTAINER="gitea"
 export BACKUP_ROOT="/backup/gitea"
 export BACKUP_ORGANIZATIONS="Org1,Org2"
 export LOG_LEVEL="DEBUG"
 
+# 通知配置（敏感信息）
+export WECOM_WEBHOOK_URL="https://qyapi.weixin.qq.com/..."
+export EMAIL_SMTP_PASSWORD="your-password"
+export DINGTALK_SECRET="SECxxx"
+
 python gitea_mirror_backup.py
 ```
 
-#### 3. 代码配置（向后兼容）
+### 支持的环境变量
 
-直接修改 `gitea_mirror_backup.py` 中的 `Config` 类。
+**基础配置**：
+- `GITEA_DOCKER_CONTAINER` - Gitea 容器名
+- `GITEA_DATA_VOLUME` - Gitea 数据目录
+- `BACKUP_ROOT` - 备份根目录
+- `BACKUP_ORGANIZATIONS` - 组织列表（逗号分隔）
+- `LOG_LEVEL` - 日志级别
+
+**通知配置**：
+- `WECOM_WEBHOOK_URL` - 企业微信 Webhook URL
+- `DINGTALK_WEBHOOK_URL` - 钉钉 Webhook URL
+- `DINGTALK_SECRET` - 钉钉加签密钥
+- `EMAIL_SMTP_HOST` - 邮件服务器
+- `EMAIL_SMTP_PORT` - 邮件端口
+- `EMAIL_SMTP_USER` - 邮件用户名
+- `EMAIL_SMTP_PASSWORD` - 邮件密码
+- `EMAIL_FROM_ADDR` - 发件人地址
+- `EMAIL_TO_ADDRS` - 收件人地址（逗号分隔）
+- `WEBHOOK_URL` - 通用 Webhook URL
+
+完整列表请参考：[环境变量文档](docs/ENV-VARIABLES.md)
 
 ### 命令行选项
 
@@ -370,7 +423,11 @@ python gitea_mirror_backup.py --cleanup
 
 ## 📖 更多文档
 
-- **[部署指南](docs/deployment.md)** - 详细的部署说明
+- **[配置指南](docs/configuration.md)** - 详细的配置说明
+- **[环境变量](docs/ENV-VARIABLES.md)** - 所有环境变量列表
+- **[通知配置](docs/notifications.md)** - 通知系统配置
+- **[Docker 部署](docs/docker.md)** - Docker 部署指南
+- **[迁移指南](docs/MIGRATION-GUIDE.md)** - 配置迁移指南
 - **[示例文件](examples/)** - 配置和报告示例
 - **[更新日志](CHANGELOG.md)** - 版本历史
 

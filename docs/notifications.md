@@ -2,7 +2,7 @@
 
 ## 📧 邮件通知
 
-### 配置示例
+### 配置方式 1: 使用 config.yaml
 
 ```yaml
 notifications:
@@ -17,6 +17,48 @@ notifications:
       - "admin@example.com"
       - "team@example.com"
     notify_on: "on_alert"  # always/on_error/on_alert
+```
+
+### 配置方式 2: 使用环境变量
+
+```bash
+# .env 文件
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USER=your-email@gmail.com
+EMAIL_SMTP_PASSWORD=your-app-password
+EMAIL_FROM_ADDR=backup@example.com
+EMAIL_TO_ADDRS=admin@example.com,team@example.com
+```
+
+然后在 `config.yaml` 中启用：
+
+```yaml
+notifications:
+  email:
+    enabled: true
+    notify_on: "on_alert"
+```
+
+### 配置方式 3: 混合使用（推荐）
+
+```yaml
+# config.yaml（基础配置）
+notifications:
+  email:
+    enabled: true
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from_addr: "backup@example.com"
+    to_addrs:
+      - "admin@example.com"
+    notify_on: "on_alert"
+```
+
+```bash
+# .env（敏感信息）
+EMAIL_SMTP_USER=your-email@gmail.com
+EMAIL_SMTP_PASSWORD=your-app-password
 ```
 
 ### Gmail 配置
@@ -69,7 +111,9 @@ notifications:
 1. 登录企业微信管理后台
 2. 进入「应用管理」→「群机器人」
 3. 创建机器人，获取 Webhook URL
-4. 配置：
+4. 配置通知
+
+### 配置方式 1: 使用 config.yaml
 
 ```yaml
 notifications:
@@ -78,6 +122,24 @@ notifications:
     webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY"
     notify_on: "on_alert"
 ```
+
+### 配置方式 2: 使用环境变量（推荐）
+
+```bash
+# .env 文件
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+```
+
+然后在 `config.yaml` 中启用：
+
+```yaml
+notifications:
+  wecom:
+    enabled: true
+    notify_on: "on_alert"
+```
+
+> 💡 **推荐使用环境变量**：Webhook URL 包含密钥，不应提交到版本控制
 
 ### 消息格式
 
@@ -102,7 +164,7 @@ notifications:
 3. 设置安全设置（推荐使用加签）
 4. 获取 Webhook URL 和加签密钥
 
-### 基础配置
+### 配置方式 1: 基础配置（config.yaml）
 
 ```yaml
 notifications:
@@ -112,16 +174,40 @@ notifications:
     notify_on: "on_alert"
 ```
 
-### 加签配置（推荐）
+### 配置方式 2: 使用环境变量（推荐）
+
+```bash
+# .env 文件
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+DINGTALK_SECRET=SECxxxxxxxxxxxx
+```
+
+然后在 `config.yaml` 中启用：
 
 ```yaml
 notifications:
   dingtalk:
     enabled: true
-    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
-    secret: "SECxxxxxxxxxxxx"  # 加签密钥
     notify_on: "on_alert"
 ```
+
+### 配置方式 3: 加签配置（最安全）
+
+```yaml
+# config.yaml
+notifications:
+  dingtalk:
+    enabled: true
+    notify_on: "on_alert"
+```
+
+```bash
+# .env（敏感信息）
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+DINGTALK_SECRET=SECxxxxxxxxxxxx
+```
+
+> 💡 **推荐使用环境变量 + 加签**：提高安全性，密钥不会泄露
 
 ## 🔔 通知条件
 
@@ -215,18 +301,56 @@ python test_notifier.py
 
 1. **邮箱密码** - 使用应用专用密码，不要使用主密码
 2. **Webhook Token** - 定期更换 API token
-3. **配置文件权限** - 设置适当的文件权限
+3. **使用环境变量** - 敏感信息使用环境变量而非配置文件
+
+```bash
+# .env 文件（不要提交到 Git）
+EMAIL_SMTP_PASSWORD=your-password
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+DINGTALK_SECRET=your-secret
+```
+
+4. **配置文件权限** - 设置适当的文件权限
 
 ```bash
 chmod 600 config.yaml
+chmod 600 .env
 ```
 
-4. **环境变量** - 敏感信息可以使用环境变量
+5. **.gitignore** - 确保敏感文件不被提交
+
+```
+# .gitignore
+.env
+config.yaml
+config/config.yaml
+```
+
+## 📋 环境变量完整列表
+
+所有通知相关的环境变量：
 
 ```bash
-export SMTP_PASSWORD="your-password"
-export DINGTALK_SECRET="your-secret"
+# 企业微信
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+
+# 钉钉
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=xxx
+DINGTALK_SECRET=SECxxxxxxxxxxxx
+
+# 邮件
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USER=your-email@gmail.com
+EMAIL_SMTP_PASSWORD=your-app-password
+EMAIL_FROM_ADDR=backup@example.com
+EMAIL_TO_ADDRS=admin@example.com,team@example.com
+
+# 通用 Webhook
+WEBHOOK_URL=https://your-webhook-endpoint.com/notify
 ```
+
+详细说明请参考：[环境变量文档](ENV-VARIABLES.md)
 
 ## 📞 获取帮助
 

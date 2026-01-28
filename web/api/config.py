@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 
     # 备份配置路径
     BACKUP_CONFIG_PATH: str = "./config/config.yaml"
-    BACKUP_BASE_PATH: str = "./backup"
+    # 统一使用 BACKUP_ROOT（与备份服务保持一致）
+    BACKUP_ROOT: str = "./backup"
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
@@ -39,6 +40,11 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+    @property
+    def BACKUP_BASE_PATH(self) -> str:
+        """兼容旧代码：BACKUP_BASE_PATH 指向 BACKUP_ROOT"""
+        return self.BACKUP_ROOT
 
 
 # 全局配置实例

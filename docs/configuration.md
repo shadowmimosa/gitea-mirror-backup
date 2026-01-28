@@ -86,8 +86,23 @@ LOG_FILE=/logs/gitea-mirror-backup.log    # 日志文件路径
 LOG_LEVEL=INFO                            # 日志级别：DEBUG, INFO, WARNING, ERROR
 
 # ============ 通知配置（可选） ============
-WEBHOOK_URL=https://your-webhook-url      # Webhook URL
-WEBHOOK_NOTIFY_ON=on_alert                # 通知时机：always, on_alert, never
+# 企业微信
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+
+# 钉钉
+DINGTALK_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=xxx
+DINGTALK_SECRET=SECxxxxxxxxxxxx
+
+# 邮件通知
+EMAIL_SMTP_HOST=smtp.gmail.com
+EMAIL_SMTP_PORT=587
+EMAIL_SMTP_USER=your-email@gmail.com
+EMAIL_SMTP_PASSWORD=your-app-password
+EMAIL_FROM_ADDR=backup@example.com
+EMAIL_TO_ADDRS=admin@example.com,team@example.com
+
+# 通用 Webhook
+WEBHOOK_URL=https://your-webhook-url
 ```
 
 ## 📄 方式 2: 配置文件 (config.yaml)

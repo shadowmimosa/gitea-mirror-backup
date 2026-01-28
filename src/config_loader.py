@@ -78,6 +78,20 @@ class ConfigLoader:
         'PROTECT_ABNORMAL_SNAPSHOTS': 'alerts.protect_abnormal_snapshots',
         'LOG_FILE': 'logging.file',
         'LOG_LEVEL': 'logging.level',
+        # 通知配置 - 企业微信
+        'WECOM_WEBHOOK_URL': 'notifications.wecom.webhook_url',
+        # 通知配置 - 钉钉
+        'DINGTALK_WEBHOOK_URL': 'notifications.dingtalk.webhook_url',
+        'DINGTALK_SECRET': 'notifications.dingtalk.secret',
+        # 通知配置 - 邮件
+        'EMAIL_SMTP_HOST': 'notifications.email.smtp_host',
+        'EMAIL_SMTP_PORT': 'notifications.email.smtp_port',
+        'EMAIL_SMTP_USER': 'notifications.email.smtp_user',
+        'EMAIL_SMTP_PASSWORD': 'notifications.email.smtp_password',
+        'EMAIL_FROM_ADDR': 'notifications.email.from_addr',
+        'EMAIL_TO_ADDRS': 'notifications.email.to_addrs',  # 逗号分隔
+        # 通知配置 - 通用 Webhook
+        'WEBHOOK_URL': 'notifications.webhook.url',
     }
 
     def __init__(self, config_path: Optional[str] = None):

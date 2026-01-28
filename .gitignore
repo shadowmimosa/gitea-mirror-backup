@@ -11,6 +11,8 @@ build/
 # 配置文件
 config.yaml
 *.local.yaml
+.env
+config/config.yaml
 
 # 测试和临时文件
 test_*.md

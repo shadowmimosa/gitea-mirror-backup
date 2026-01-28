@@ -3,9 +3,12 @@
 # ============================================================
 # 
 # 📖 快速开始：
-#   1. 修改下面的 volumes.gitea-data.driver_opts.device 为实际路径
-#   2. 根据需要修改环境变量配置（x-common-env 部分）
-#   3. 选择运行模式：
+#   1. 修改 volumes.gitea-data.driver_opts.device 为实际路径
+#   2. 复制 .env.example 为 .env 并修改配置
+#      cp env.example .env
+#   3. 复制 config/config.yaml 并根据需要修改
+#      cp config.example.yaml config/config.yaml
+#   4. 选择运行模式：
 #      - 手动备份：docker compose run --rm backup
 #      - 启动 Web：docker compose up -d web
 #      - 启动定时：docker compose up -d cron
@@ -13,13 +16,14 @@
 #
 # 📚 详细文档：
 #   - 配置说明：docs/configuration.md
+#   - 配置分析：docs/configuration-analysis.md
 #   - Docker 指南：docs/docker.md
 #   - 主文档：README_CN.md
 #
 # ⚠️ 重要提示：
 #   - docker compose up 不会启动任何服务（这是设计行为）
 #   - 所有服务都使用 profiles，需要明确指定才会启动
-#   - 配置优先级：环境变量 > config.yaml > 默认值
+#   - 配置优先级：.env 环境变量 > config.yaml > 默认值
 #
 # ============================================================
 
@@ -40,66 +44,11 @@ volumes:
 
 # ============================================================
 # 共享环境变量配置
-# 说明：这些配置会被所有服务共享，可根据实际情况修改
+# 说明：基础配置，更多配置请在 .env 文件或 config/config.yaml 中设置
 # ============================================================
 x-common-env: &common-env
-  # 时区设置（中国时区）
+  # 时区设置
   TZ: Asia/Shanghai
-  
-  # ============ Gitea 配置 ============
-  # Gitea 容器名称（需要与实际运行的 Gitea 容器名一致）
-  GITEA_DOCKER_CONTAINER: gitea
-  
-  # Gitea 数据目录（容器内路径，对应共享卷中的 gitea 子目录）
-  GITEA_DATA_VOLUME: /shared/gitea
-  
-  # ============ 备份配置 ============
-  # 备份存储根目录（容器内路径，对应共享卷中的 backup 子目录）
-  BACKUP_ROOT: /shared/backup
-  
-  # 要备份的组织列表（逗号分隔，留空表示备份所有组织）
-  # 示例: "Org1,Org2,Org3"
-  BACKUP_ORGANIZATIONS: ""
-  
-  # 是否只备份镜像仓库（true=只备份镜像仓库，false=备份所有仓库）
-  CHECK_MIRROR_ONLY: "false"
-  
-  # ============ 保留策略 ============
-  # 快照保留天数（超过此天数的快照会被清理）
-  SNAPSHOT_RETENTION_DAYS: "30"
-  
-  # 归档保留月数（超过此月数的归档会被清理）
-  ARCHIVE_RETENTION_MONTHS: "12"
-  
-  # 报告保留天数（超过此天数的报告会被清理）
-  REPORT_RETENTION_DAYS: "30"
-  
-  # ============ 异常检测 ============
-  # 提交数减少阈值（百分比，超过此值会触发警告）
-  # 示例: 10 表示提交数减少超过 10% 时警告
-  COMMIT_DECREASE_THRESHOLD: "10"
-  
-  # 仓库大小减少阈值（百分比，超过此值会触发警告）
-  # 示例: 30 表示大小减少超过 30% 时警告
-  SIZE_DECREASE_THRESHOLD: "30"
-  
-  # 是否保护异常快照（true=检测到异常时不删除旧快照，false=正常清理）
-  PROTECT_ABNORMAL_SNAPSHOTS: "true"
-  
-  # ============ 日志配置 ============
-  # 日志文件路径（容器内路径）
-  LOG_FILE: /logs/gitea-mirror-backup.log
-  
-  # 日志级别（DEBUG, INFO, WARNING, ERROR）
-  LOG_LEVEL: INFO
-  
-  # ============ 通知配置（可选） ============
-  # Webhook 通知 URL（企业微信、钉钉等）
-  # 取消注释并填入实际 URL 以启用通知
-  # WEBHOOK_URL: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key-here
-  
-  # 通知触发时机（always=总是通知, on_alert=仅异常时通知, never=不通知）
-  # WEBHOOK_NOTIFY_ON: on_alert
 
 # ============================================================
 # 共享卷挂载配置
@@ -115,10 +64,8 @@ x-common-volumes: &common-volumes
   # Docker socket（用于与 Docker 守护进程通信，检查容器状态）
   - /var/run/docker.sock:/var/run/docker.sock:ro
   
-  # ============ 可选：配置文件挂载 ============
-  # 如果你想使用 config.yaml 而非环境变量，取消下面的注释
-  # 注意：环境变量优先级高于配置文件
-  # - ./config.yaml:/app/config.yaml:ro
+  # 配置目录挂载（推荐使用 config.yaml 管理复杂配置）
+  - ./config:/app/config:ro
 
 services:
   # ============================================================
@@ -134,6 +81,8 @@ services:
     container_name: gitea-backup-oneshot
     environment:
       <<: *common-env
+    env_file:
+      - .env  # 从 .env 文件加载环境变量
     volumes: *common-volumes
     network_mode: bridge
     # 不设置 restart，因为这是一次性任务
@@ -169,15 +118,15 @@ services:
     ports:
       - "8010:8000"  # 【可修改】宿主机端口:容器端口
     environment:
-      - TZ=Asia/Shanghai
-      # 【重要】生产环境请修改此密钥
-      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+      <<: *common-env
+      # 备份数据路径（容器内，与备份服务保持一致）
+      BACKUP_ROOT: /shared/backup
       # Web 数据库路径
-      - DATABASE_URL=sqlite:///data/web.db
-      # 备份数据路径（容器内）
-      - BACKUP_BASE_PATH=/shared/backup
-      # 配置文件路径（可选）
-      - BACKUP_CONFIG_PATH=/app/config/config.yaml
+      DATABASE_URL: sqlite:///data/web.db
+      # 配置文件路径
+      BACKUP_CONFIG_PATH: /app/config/config.yaml
+    env_file:
+      - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY）
     volumes:
       - gitea-data:/shared:ro  # 只读访问备份数据（安全）
       - ./config:/app/config:ro
@@ -217,6 +166,8 @@ services:
     command: -c "printenv | grep -v 'no_proxy' >> /etc/environment && echo '0 2 * * * . /etc/environment && cd /app && /usr/local/bin/python3 gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
     environment:
       <<: *common-env
+    env_file:
+      - .env  # 从 .env 文件加载环境变量
     volumes: *common-volumes
     restart: unless-stopped
     # 使用 profiles 防止默认启动

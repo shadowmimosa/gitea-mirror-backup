@@ -102,83 +102,88 @@ crontab -e
 
 Three configuration methods supported (priority: environment variables > config file > defaults):
 
-#### 1. YAML Config File (Recommended)
+#### 1. Hybrid Configuration (Recommended)
+
+Base configuration in `config.yaml`, sensitive data in `.env`:
 
 ```yaml
+# config/config.yaml
 gitea:
   docker_container: "gitea"
-  docker_git_user: "git"
-  data_volume: "/opt/gitea/gitea"
-  repos_path: "git/repositories"
+  data_volume: "/shared/gitea"
 
 backup:
-  root: "/opt/backup/gitea-mirrors"
-  organizations:                    # Specify orgs, empty = all
-    - "MyOrg"
-  check_mirror_only: false          # true = mirror repos only
-  retention:
-    snapshots_days: 30              # Snapshot retention days
-    archives_months: 12             # Archive retention months
-    reports_days: 30                # Report retention days
-
-alerts:
-  commit_decrease_threshold: 10     # Commit decrease threshold (%)
-  size_decrease_threshold: 30       # Size decrease threshold (%)
-  protect_abnormal_snapshots: true  # Auto-protect abnormal snapshots
-
-logging:
-  file: "/var/log/gitea-mirror-backup.log"
-  level: "INFO"                     # DEBUG/INFO/WARNING/ERROR
-
-# Notification configuration (optional)
+  root: "/shared/backup"
+  organizations: []
+  
 notifications:
-  # Method 1: Webhook (recommended, supports WeChat Work)
-  webhook:
-    enabled: true
-    url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
-    method: "POST"
-    notify_on: "on_alert"           # always/on_error/on_alert
-  
-  # Method 2: Email notification
-  email:
-    enabled: false
-    smtp_host: "smtp.example.com"
-    smtp_port: 587
-    smtp_user: "user@example.com"
-    smtp_password: "password"
-    from_addr: "backup@example.com"
-    to_addrs:
-      - "admin@example.com"
-    notify_on: "on_alert"
-  
-  # Method 3: WeChat Work bot
   wecom:
-    enabled: false
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
-    notify_on: "on_alert"
-  
-  # Method 4: DingTalk bot
-  dingtalk:
-    enabled: false
-    webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
-    secret: ""                      # Optional, signature secret
+    enabled: true
     notify_on: "on_alert"
 ```
 
-#### 2. Environment Variables
+```bash
+# .env (sensitive data, not committed to Git)
+SECRET_KEY=your-random-secret-key
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+EMAIL_SMTP_PASSWORD=your-password
+```
+
+#### 2. Pure YAML Configuration
+
+```yaml
+# config.yaml
+gitea:
+  docker_container: "gitea"
+  data_volume: "/opt/gitea/gitea"
+
+backup:
+  root: "/opt/backup/gitea-mirrors"
+  organizations: ["MyOrg"]
+  check_mirror_only: false
+  retention:
+    snapshots_days: 30
+    archives_months: 12
+
+alerts:
+  commit_decrease_threshold: 10
+  protect_abnormal_snapshots: true
+
+logging:
+  level: "INFO"
+
+# Notifications (use environment variables for sensitive data)
+notifications:
+  wecom:
+    enabled: false
+    webhook_url: ""  # Use WECOM_WEBHOOK_URL env var
+  email:
+    enabled: false
+    smtp_password: ""  # Use EMAIL_SMTP_PASSWORD env var
+```
+
+#### 3. Environment Variables
 
 ```bash
+# Basic config
 export GITEA_DOCKER_CONTAINER="gitea"
 export BACKUP_ROOT="/backup/gitea"
-export BACKUP_ORGANIZATIONS="Org1,Org2"
-export LOG_LEVEL="DEBUG"
+export LOG_LEVEL="INFO"
+
+# Notifications (sensitive data)
+export WECOM_WEBHOOK_URL="https://qyapi.weixin.qq.com/..."
+export EMAIL_SMTP_PASSWORD="your-password"
 
 python gitea_mirror_backup.py
 ```
 
-#### 3. Code Configuration (Backward Compatible)
+### Supported Environment Variables
 
-Directly modify the `Config` class in `gitea_mirror_backup.py`.
+**Basic**: `GITEA_DOCKER_CONTAINER`, `BACKUP_ROOT`, `BACKUP_ORGANIZATIONS`, `LOG_LEVEL`
+
+**Notifications**: `WECOM_WEBHOOK_URL`, `DINGTALK_WEBHOOK_URL`, `DINGTALK_SECRET`, `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_SMTP_USER`, `EMAIL_SMTP_PASSWORD`, `EMAIL_FROM_ADDR`, `EMAIL_TO_ADDRS`, `WEBHOOK_URL`
+
+See [Environment Variables Documentation](docs/ENV-VARIABLES.md) for complete list.
 
 ### Command Line Options
 
@@ -370,8 +375,11 @@ python gitea_mirror_backup.py --cleanup
 
 ## 📖 Documentation
 
-- **[Deployment Guide](docs/deployment.md)** - Detailed deployment instructions
-- **[Notification Guide](docs/notifications.md)** - Notification system configuration
+- **[Configuration Guide](docs/configuration.md)** - Detailed configuration guide
+- **[Environment Variables](docs/ENV-VARIABLES.md)** - Complete environment variables list
+- **[Notifications](docs/notifications.md)** - Notification system setup
+- **[Docker Deployment](docs/docker.md)** - Docker deployment guide
+- **[Migration Guide](docs/MIGRATION-GUIDE.md)** - Configuration migration guide
 - **[Examples](examples/)** - Configuration and report examples
 - **[Changelog](CHANGELOG.md)** - Version history
 
