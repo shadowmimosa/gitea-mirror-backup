@@ -29,9 +29,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list = ["http://localhost:5173", "http://localhost:8000"]
 
     # 备份配置路径
-    BACKUP_CONFIG_PATH: str = "./config/config.yaml"
+    BACKUP_CONFIG_PATH: str = "/app/config/config.yaml"
     # 统一使用 BACKUP_ROOT（与备份服务保持一致）
-    BACKUP_ROOT: str = "./backup"
+    BACKUP_ROOT: str = "/shared/backup"
 
     # 日志配置
     LOG_LEVEL: str = "INFO"

@@ -4,10 +4,10 @@
 # 
 # 📖 快速开始：
 #   1. 修改 volumes.gitea-data.driver_opts.device 为实际路径
-#   2. 复制 .env.example 为 .env 并修改配置
+#   2. 复制 env.example 为 .env 并修改配置
 #      cp env.example .env
-#   3. 复制 config/config.yaml 并根据需要修改
-#      cp config.example.yaml config/config.yaml
+#   3. 复制 config.example.yaml 为 config/config.yaml（可选）
+#      mkdir -p config && cp config.example.yaml config/config.yaml
 #   4. 选择运行模式：
 #      - 手动备份：docker compose run --rm backup
 #      - 启动 Web：docker compose up -d web
@@ -16,13 +16,14 @@
 #
 # 📚 详细文档：
 #   - 配置说明：docs/configuration.md
-#   - 配置分析：docs/configuration-analysis.md
+#   - 环境变量：docs/ENV-VARIABLES.md
 #   - Docker 指南：docs/docker.md
 #   - 主文档：README_CN.md
 #
 # ⚠️ 重要提示：
 #   - docker compose up 不会启动任何服务（这是设计行为）
 #   - 所有服务都使用 profiles，需要明确指定才会启动
+#   - 配置方式：.env（必需）+ config/config.yaml（可选）
 #   - 配置优先级：.env 环境变量 > config.yaml > 默认值
 #
 # ============================================================
@@ -107,7 +108,7 @@ services:
   # Web 管理界面 - 可选服务
   # 用途：提供 Web 界面查看备份历史、状态和手动触发备份
   # 启动：docker compose up -d web
-  # 访问：http://localhost:8000
+  # 访问：http://localhost:8010
   # ============================================================
   web:
     build:
@@ -119,14 +120,8 @@ services:
       - "8010:8000"  # 【可修改】宿主机端口:容器端口
     environment:
       <<: *common-env
-      # 备份数据路径（容器内，与备份服务保持一致）
-      BACKUP_ROOT: /shared/backup
-      # Web 数据库路径
-      DATABASE_URL: sqlite:///data/web.db
-      # 配置文件路径
-      BACKUP_CONFIG_PATH: /app/config/config.yaml
     env_file:
-      - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY）
+      - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY 等）
     volumes:
       - gitea-data:/shared:ro  # 只读访问备份数据（安全）
       - ./config:/app/config:ro
