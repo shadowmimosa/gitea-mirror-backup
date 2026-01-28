@@ -808,6 +808,7 @@ def send_backup_notification(processed_count: int, skipped_count: int):
     total_repos = 0
     total_commits = 0
     total_snapshots = 0
+    total_size_kb = 0
     alert_repos = []
 
     for org_dir in backup_root.iterdir():
@@ -834,6 +835,10 @@ def send_backup_notification(processed_count: int, skipped_count: int):
                 except Exception:
                     pass
 
+            # 统计大小
+            dir_size = get_directory_size(repo_dir)
+            total_size_kb += dir_size
+
             # 检查异常
             alert_file = repo_dir / ".alerts"
             if alert_file.exists():
@@ -849,7 +854,7 @@ def send_backup_notification(processed_count: int, skipped_count: int):
         'skipped_count': skipped_count,
         'has_alerts': has_alerts,
         'alert_repos': alert_repos,
-        'total_size_mb': 0,  # 可以添加大小统计
+        'total_size_mb': total_size_kb // 1024,  # 转换为 MB
     }
 
     # 发送通知
