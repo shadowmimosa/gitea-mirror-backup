@@ -4,32 +4,21 @@
 
 ### 方式 1: 使用 Docker Compose（推荐）
 
-1. **配置方式选择**
+1. **准备配置文件**
 
-Docker 环境支持两种配置方式，**推荐使用环境变量**：
-
-**方式 A: 使用环境变量（推荐）**
 ```bash
-# 直接在 docker-compose.yml 中配置环境变量
-# 或者创建 .env 文件
-cat > .env << EOF
-GITEA_DOCKER_CONTAINER=gitea
-BACKUP_ROOT=/shared/backup
-LOG_LEVEL=INFO
-EOF
+# 1. 复制 Docker 配置模板
+cp config.docker.yaml config.yaml
+
+# 2. 复制环境变量模板
+cp env.example .env
+
+# 3. 修改 .env（必需）
+vim .env  # 至少设置 SECRET_KEY
+
+# 4. 修改 docker-compose.yml 中的实际路径
+vim docker-compose.yml  # 修改 volumes.gitea-data.driver_opts.device
 ```
-
-**方式 B: 使用配置文件（可选）**
-```bash
-# 如果你更喜欢用配置文件
-cp config.example.yaml config.yaml
-vim config.yaml
-
-# 然后在 docker-compose.yml 中取消注释配置文件挂载
-# - ./config.yaml:/app/config.yaml:ro
-```
-
-> **配置优先级**：环境变量 > config.yaml > 默认值
 
 2. **选择运行模式**
 
@@ -46,18 +35,16 @@ docker compose up -d cron
 # 同时启动 Web + 定时任务
 docker compose up -d web cron
 
-# 一键启动所有长期运行的服务（Web + 定时任务，不包含手动备份）
+# 一键启动所有长期运行的服务（Web + 定时任务）
 docker compose --profile full up -d
 
 # 查看日志
 docker compose logs -f web
 docker compose logs -f cron
 
-# 停止服务（需要指定服务名或 profile）
+# 停止服务
 docker compose down web cron           # 停止指定的服务
 docker compose --profile full down     # 停止所有服务
-docker compose stop web                # 仅停止 web 服务
-docker compose stop cron               # 仅停止 cron 服务
 ```
 
 > **注意**：`docker compose up` 不会启动任何服务，这是设计行为。请根据需要选择上述命令。
@@ -104,68 +91,63 @@ docker run -d \
 
 ### 配置方式
 
-#### 方式 1: 环境变量（推荐用于 Docker）
+Docker 部署使用**混合配置**方式：
 
-所有配置都可以通过环境变量设置，**这是 Docker 环境的推荐方式**：
+#### 1. 配置文件（推荐用于基础配置）
 
 ```bash
-# Gitea 配置
-GITEA_DOCKER_CONTAINER=gitea
-GITEA_DATA_VOLUME=/data/gitea
-GITEA_REPOS_PATH=git/repositories
-
-# 备份配置
-BACKUP_ROOT=/backup
-BACKUP_ORGANIZATIONS=Org1,Org2
-CHECK_MIRROR_ONLY=false
-
-# 保留策略
-SNAPSHOT_RETENTION_DAYS=30
-ARCHIVE_RETENTION_MONTHS=12
-REPORT_RETENTION_DAYS=30
-
-# 异常检测
-COMMIT_DECREASE_THRESHOLD=10
-SIZE_DECREASE_THRESHOLD=30
-PROTECT_ABNORMAL_SNAPSHOTS=true
-
-# 日志
-LOG_FILE=/logs/gitea-mirror-backup.log
-LOG_LEVEL=INFO
-
-# 通知（可选）
-WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
-WEBHOOK_NOTIFY_ON=on_alert
+# 使用 Docker 专用配置模板
+cp config.docker.yaml config.yaml
+vim config.yaml
 ```
 
-#### 方式 2: 配置文件（可选）
-
-如果你更喜欢使用配置文件，可以挂载 `config.yaml`：
-
+**config.yaml** 使用容器内路径：
 ```yaml
-# docker-compose.yml
-services:
-  backup:
-    volumes:
-      - ./config.yaml:/app/config.yaml:ro  # 取消注释这行
+gitea:
+  docker_container: "gitea"
+  data_volume: "/shared/gitea"      # 容器内路径
+
+backup:
+  root: "/shared/backup"            # 容器内路径
+
+logging:
+  file: "/logs/gitea-mirror-backup.log"  # 容器内路径
 ```
 
-**配置优先级**：`环境变量` > `config.yaml` > `默认值`
+#### 2. 环境变量（推荐用于敏感信息）
 
-> **提示**：
-> - Docker 环境推荐使用环境变量（符合 12-factor 原则）
-> - 本地运行脚本时推荐使用 config.yaml（方便管理）
-> - 两种方式可以混用，环境变量会覆盖配置文件
+```bash
+# .env 文件
+SECRET_KEY=your-random-secret-key-here
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/...
+EMAIL_SMTP_PASSWORD=your-password
+```
+
+**配置优先级**：`.env 环境变量` > `config.yaml` > `默认值`
+
+> **重要**：
+> - Docker 部署必须使用 `config.docker.yaml` 作为模板（容器内路径）
+> - 不要使用 `config.example.yaml`（那是直接部署用的，使用宿主机路径）
 
 ### 卷挂载
 
 | 宿主机路径 | 容器路径 | 权限 | 说明 |
 |-----------|---------|------|------|
-| `/opt/gitea/gitea` | `/data/gitea` | ro | Gitea 数据目录（只读） |
-| `/opt/backup/gitea-mirrors` | `/backup` | rw | 备份存储目录（读写） |
+| `/opt/gitea/gitea` | `/shared/gitea` | ro | Gitea 数据目录（只读） |
+| `/opt/gitea/backup` | `/shared/backup` | rw | 备份存储目录（读写） |
 | `/var/log/gitea-backup` | `/logs` | rw | 日志目录（读写） |
 | `/var/run/docker.sock` | `/var/run/docker.sock` | ro | Docker socket（只读） |
-| `./config.yaml` | `/app/config.yaml` | ro | 配置文件（可选） |
+| `./config.yaml` | `/app/config.yaml` | ro | 配置文件 |
+
+**路径映射说明**：
+```
+宿主机                    容器内
+/opt/gitea/gitea    →    /shared/gitea
+/opt/gitea/backup   →    /shared/backup
+/var/log/gitea-backup →  /logs
+```
+
+> **重要**：`config.yaml` 中使用容器内路径（`/shared/...`），docker-compose.yml 负责映射到宿主机路径
 
 ## 🕐 定时任务
 
@@ -474,25 +456,52 @@ docker compose ps
 
 ### Q: 必须要 config.yaml 文件吗？
 
-A: **不需要**。配置系统支持三种方式（优先级从高到低）：
-1. **环境变量**（推荐用于 Docker）- 在 `docker-compose.yml` 中配置
-2. **config.yaml**（可选）- 如果需要可以挂载
-3. **默认值** - 内置的合理默认配置
+A: **推荐使用**。虽然可以只用环境变量，但 `config.yaml` 可以管理复杂配置（如通知系统）。
 
-Docker 环境推荐使用环境变量，这样更灵活且符合容器化最佳实践。
+**推荐配置方式**：
+```bash
+# 1. 使用 config.yaml 管理基础配置
+cp config.docker.yaml config.yaml
+
+# 2. 使用 .env 管理敏感信息
+cp env.example .env
+vim .env  # 设置 SECRET_KEY 等
+```
+
+**配置优先级**：`.env` > `config.yaml` > 默认值
 
 ### Q: 如何同时使用配置文件和环境变量？
 
-A: 可以混用，环境变量会覆盖配置文件中的值。例如：
+A: 推荐的混合配置方式：
+
 ```yaml
-# config.yaml 中设置基础配置
+# config.yaml（基础配置）
+gitea:
+  docker_container: "gitea"
+  data_volume: "/shared/gitea"
+
 backup:
-  root: /backup
-  
-# docker-compose.yml 中用环境变量覆盖
-environment:
-  - BACKUP_ROOT=/custom/backup  # 这个会生效
+  root: "/shared/backup"
+  organizations: []
+
+notifications:
+  wecom:
+    enabled: true
+    notify_on: "on_alert"
 ```
+
+```bash
+# .env（敏感信息）
+SECRET_KEY=your-secret-key
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/...
+EMAIL_SMTP_PASSWORD=your-password
+
+# 可选：覆盖 config.yaml 中的配置
+BACKUP_ORGANIZATIONS=Org1,Org2
+LOG_LEVEL=DEBUG
+```
+
+环境变量会覆盖配置文件中的对应值。
 
 ### Q: 如何修改定时任务的执行时间？
 

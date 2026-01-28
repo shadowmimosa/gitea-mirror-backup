@@ -116,10 +116,20 @@ WEBHOOK_URL=https://your-webhook-url
 ### 使用方法
 
 1. **创建配置文件**:
+
+**直接部署**：
 ```bash
 cp config.example.yaml config.yaml
 vim config.yaml
 ```
+
+**Docker 部署**：
+```bash
+cp config.docker.yaml config.yaml
+vim config.yaml
+```
+
+> **重要**：Docker 部署必须使用 `config.docker.yaml`（容器内路径），不要使用 `config.example.yaml`（宿主机路径）
 
 2. **本地运行**:
 ```bash

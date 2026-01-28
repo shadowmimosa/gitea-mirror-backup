@@ -223,13 +223,12 @@ class EmailNotifier(BaseNotifier):
 
         # 发送邮件
         try:
-            with smtplib.SMTP(smtp_host, smtp_port) as server:
-                server.starttls()
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
                 server.login(smtp_user, smtp_password)
                 server.send_message(msg)
             logger.info(f"邮件通知已发送: {title}")
         except Exception as e:
-            logger.error(f"发送邮件失败: {e}")
+            logger.error(f"发送邮件失败: {repr(e)}")
             raise
 
     def _build_html_content(
