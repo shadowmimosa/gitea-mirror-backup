@@ -35,10 +35,10 @@
 
 ```bash
 # 使用 Docker Compose
-docker-compose up -d
+docker compose up -d
 
 # 查看日志
-docker-compose logs -f gitea-backup
+docker compose logs -f gitea-backup
 ```
 
 详见 [Docker 部署指南](docs/docker.md)

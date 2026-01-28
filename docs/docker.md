@@ -230,7 +230,7 @@ spec:
 
 ```bash
 # Docker Compose
-docker-compose logs -f gitea-backup
+docker compose logs -f gitea-backup
 
 # Docker
 docker logs -f gitea-backup

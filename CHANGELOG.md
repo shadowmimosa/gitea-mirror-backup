@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-01-28
+
+### Fixed
+
+- 🐛 **Cron 服务环境变量传递问题**
+  - 修复 cron 定时任务无法读取容器环境变量的问题
+  - 在 cron 任务中添加 `. /etc/environment` 以加载环境变量
+  - 确保 cron 任务使用正确的配置路径（`/shared/gitea` 和 `/shared/backup`）
+  - 修复 cron 任务中 Python 命令路径（`python` → `python3`）
+
+- 🔧 **Docker Compose 配置优化**
+  - 移除过时的 `version: '3.8'` 配置（避免警告信息）
+  - 优化 cron 服务的环境变量导出机制
+
+### Changed
+
+- 📝 **文档更新**
+  - 统一使用新版 `docker compose` 命令（替代旧版 `docker-compose`）
+  - 更新 README.md、README_CN.md 和 docs/docker.md 中的所有命令示例
+
+### Technical Details
+
+**问题原因**：
+- cron 守护进程执行任务时运行在最小化环境中，不会自动继承容器的环境变量
+- 导致程序读取 config.yaml 中的默认路径而非环境变量配置的路径
+
+**解决方案**：
+```bash
+# 容器启动时将环境变量导出到 /etc/environment
+printenv | grep -v 'no_proxy' >> /etc/environment
+
+# cron 任务执行前加载环境变量
+. /etc/environment && cd /app && /usr/local/bin/python3 gitea_mirror_backup.py
+```
+
+**影响范围**：
+- 仅影响使用 `docker compose up -d cron` 启动的定时任务服务
+- 手动执行（`docker compose run --rm backup`）和 Web 服务不受影响
+
+### Upgrade Notes
+
+如果你正在使用 cron 服务，需要重启以应用修复：
+
+```bash
+docker compose down cron
+docker compose up -d cron
+```
+
+---
+
 ## [1.4.0] - 2026-01-27
 
 ### Added

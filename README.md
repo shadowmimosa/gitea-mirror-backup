@@ -35,10 +35,10 @@
 
 ```bash
 # Using Docker Compose
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f gitea-backup
+docker compose logs -f gitea-backup
 ```
 
 See [Docker Deployment Guide](docs/docker.md) for details.
