@@ -214,7 +214,7 @@ services:
     # 0 2 * * * = 每天凌晨 2:00
     # 0 */6 * * * = 每 6 小时一次
     # 0 0 * * 0 = 每周日凌晨
-    command: -c "printenv | grep -v 'no_proxy' >> /etc/environment && echo '0 2 * * * cd /app && /usr/local/bin/python3 gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
+    command: -c "printenv | grep -v 'no_proxy' >> /etc/environment && echo '0 2 * * * . /etc/environment && cd /app && /usr/local/bin/python3 gitea_mirror_backup.py >> /logs/cron.log 2>&1' | crontab - && cron -f"
     environment:
       <<: *common-env
     volumes: *common-volumes
