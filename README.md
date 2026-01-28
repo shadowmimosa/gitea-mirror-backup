@@ -394,7 +394,7 @@ python gitea_mirror_backup.py --cleanup
 - **[Docker Deployment](docs/docker.md)** - Docker deployment guide
 - **[Migration Guide](docs/MIGRATION-GUIDE.md)** - Configuration migration guide
 - **[Examples](examples/)** - Configuration and report examples
-- **[Changelog](CHANGELOG.md)** - Version history
+- **[Changelog](CHANGELOG_EN.md)** - Version history ([中文版](CHANGELOG.md))
 
 ## 🤝 Contributing
 

@@ -5,6 +5,133 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-01-28
+
+### Changed
+
+- 🔧 **配置系统重构** - 统一配置管理方式
+  - 统一所有服务（backup、web、cron）使用相同的配置方式
+  - 配置优先级：环境变量 > config.yaml > 默认值
+  - 移除 docker-compose.yml 中的硬编码环境变量
+  - 所有服务统一使用 `.env` + `config.yaml` 配置
+
+- 📝 **配置文件模板优化**
+  - 新增 `config.docker.yaml` - Docker 部署专用配置模板（容器路径）
+  - 新增 `config.example.yaml` - 直接部署配置模板（宿主机路径）
+  - 明确区分容器路径（/shared/gitea）和宿主机路径（/opt/gitea）
+  - 简化配置文件结构，移除不必要的 `config/` 目录层级
+
+- 🔔 **通知配置增强**
+  - 新增 10 个通知相关环境变量映射
+  - 支持通过环境变量覆盖所有通知配置
+  - 环境变量：WECOM_WEBHOOK_URL、DINGTALK_WEBHOOK_URL、DINGTALK_SECRET、EMAIL_SMTP_HOST、EMAIL_SMTP_PORT、EMAIL_USE_TLS、EMAIL_USERNAME、EMAIL_PASSWORD、EMAIL_FROM、EMAIL_TO
+
+- 📚 **文档全面更新**
+  - 新增 `docs/CONFIG-FILES.md` - 配置文件使用指南
+  - 新增 `docs/ENV-VARIABLES.md` - 环境变量完整参考
+  - 新增 `docs/MIGRATION-GUIDE.md` - 配置迁移指南
+  - 更新 `README.md` 和 `README_CN.md` - 简化配置说明
+  - 更新 `docs/docker.md` - Docker 部署配置说明
+  - 更新 `docs/configuration.md` - 配置系统详细说明
+  - 更新 `docs/notifications.md` - 通知配置说明
+  - 更新 `env.example` - 完整的环境变量示例
+
+### Fixed
+
+- 🐛 **配置一致性修复**
+  - 修复 Web 服务使用硬编码环境变量的问题
+  - 修复通知环境变量无法覆盖 config.yaml 的问题
+  - 修复配置文件路径混淆（容器路径 vs 宿主机路径）
+  - 修复服务间配置方式不一致的问题
+
+### Added
+
+- ✨ **配置管理工具**
+  - `.gitignore` 新增 `.env` 和 `config.yaml`（防止敏感信息泄露）
+  - 提供两套配置模板，适配不同部署场景
+
+### Removed
+
+- 🗑️ **清理冗余文档**
+  - 删除 `docs/configuration-analysis.md`（临时分析文档）
+  - 删除 `docs/DOCS-UPDATE-SUMMARY.md`（临时更新记录）
+  - 删除 `docs/REFACTOR-SUMMARY.md`（临时重构记录）
+
+### Technical Details
+
+**配置优先级**：
+```
+环境变量 > config.yaml > 代码默认值
+```
+
+**配置文件选择**：
+- Docker 部署：使用 `config.docker.yaml`（容器路径如 /shared/gitea）
+- 直接部署：使用 `config.example.yaml`（宿主机路径如 /opt/gitea）
+
+**环境变量映射**（新增）：
+```python
+'WECOM_WEBHOOK_URL': 'notifications.wecom.webhook_url',
+'DINGTALK_WEBHOOK_URL': 'notifications.dingtalk.webhook_url',
+'DINGTALK_SECRET': 'notifications.dingtalk.secret',
+'EMAIL_SMTP_HOST': 'notifications.email.smtp_host',
+'EMAIL_SMTP_PORT': 'notifications.email.smtp_port',
+'EMAIL_USE_TLS': 'notifications.email.use_tls',
+'EMAIL_USERNAME': 'notifications.email.username',
+'EMAIL_PASSWORD': 'notifications.email.password',
+'EMAIL_FROM': 'notifications.email.from',
+'EMAIL_TO': 'notifications.email.to',
+```
+
+**影响范围**：
+- 所有 Docker 部署用户需要更新配置文件
+- 建议使用新的配置模板重新配置
+- 旧配置仍然兼容，但建议迁移
+
+### Upgrade Notes
+
+#### Docker 部署用户
+
+1. **备份现有配置**：
+   ```bash
+   cp config.yaml config.yaml.backup
+   cp .env .env.backup
+   ```
+
+2. **使用新模板**：
+   ```bash
+   cp config.docker.yaml config.yaml
+   vim config.yaml  # 根据实际情况调整
+   ```
+
+3. **更新 docker-compose.yml**：
+   ```bash
+   docker compose down
+   docker compose pull
+   docker compose up -d
+   ```
+
+4. **验证配置**：
+   ```bash
+   docker compose logs backup
+   ```
+
+#### 直接部署用户
+
+1. **使用新模板**：
+   ```bash
+   cp config.example.yaml config.yaml
+   vim config.yaml  # 根据实际情况调整
+   ```
+
+2. **验证配置**：
+   ```bash
+   python src/gitea_mirror_backup.py --show-config
+   ```
+
+详细迁移指南请参考：`docs/MIGRATION-GUIDE.md`
+
+---
+
 ## [1.4.1] - 2026-01-28
 
 ### Fixed
@@ -577,178 +704,3 @@ docker-compose run --rm gitea-backup
 - 使用 `--show-config` 查看当前配置
 - 使用 `--validate-config` 检查配置
 - 使用 `-c config.yaml` 指定自定义配置文件
-
----
-
-[1.2.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.2.0
-[1.1.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.1.0
-[1.0.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.0.0
-
-
-### Added
-
-- ✨ **Configuration File Support** - YAML configuration file support
-  - Auto-search for config files (current dir, user dir, system dir)
-  - Specify config file via `-c` parameter
-  - Complete configuration validation with error messages
-  
-- 🔧 **Environment Variable Override** - Dynamic configuration via environment variables
-  - Support for all major configuration items
-  - Automatic type conversion (string, int, bool, list)
-  - Priority: environment variables > config file > defaults
-
-- 📋 **New Command Line Options**
-  - `--config/-c`: Specify configuration file path
-  - `--show-config`: Display current effective configuration
-  - `--validate-config`: Validate configuration correctness
-  - `--help`: Show detailed help information
-  - `--report`: Generate report only (no backup)
-  - `--cleanup`: Cleanup old reports only
-
-- 🧪 **Test Support**
-  - New configuration loader test script (`test_config.py`)
-  - Coverage for default config, YAML loading, env vars, type conversion
-
-### Changed
-
-- 🔄 **Refactored Configuration System**
-  - Migrated hard-coded config to configuration loader
-  - Maintained backward compatibility, no changes needed for old code
-  - Transparent configuration access via property accessors
-
-- 📝 **Improved Logging System**
-  - Configurable log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-  - Custom log format and date format support
-  - Lazy initialization of logging with config file control
-
-- 🎯 **Enhanced Command Line Interface**
-  - Better argument parsing with argparse
-  - Detailed help information and usage examples
-  - Improved error messages and user feedback
-
-- 📚 **Documentation Optimization**
-  - Consolidated configuration docs into README
-  - Streamlined documentation structure
-  - Removed redundant documentation files
-
-### Dependencies
-
-- ➕ Added: `PyYAML>=6.0` - For YAML configuration file parsing
-
-### Backward Compatibility
-
-- ✅ Fully backward compatible with previous versions
-- ✅ Uses default configuration if no config file provided
-- ✅ Original Config class interface unchanged
-- ✅ All existing scripts and cron jobs work without modification
-
-### Documentation
-
-- 📖 Integrated configuration guide into README
-- 📖 Added CONTRIBUTING.md for contributors
-- 📖 Updated examples and usage instructions
-- 📖 Streamlined documentation structure
-
----
-
-## [1.0.0] - 2026-01-24
-
-### Added
-
-- 🔄 Daily snapshot backups using hard-links for space efficiency
-- 📦 Monthly Git bundle archives for long-term storage
-- 🔍 Smart anomaly detection (commit count and repository size monitoring)
-- 🔒 Automatic protection of pre-anomaly snapshots and reports
-- 📊 Comprehensive backup reports with statistics and alerts
-- ⚡ Multiple recovery options (in-place, new repo, bundle export)
-- 🎯 Organization/user filtering for targeted backups
-- 💾 Configurable retention policies for snapshots and archives
-- 📝 Detailed logging with timestamps
-- 🛠️ Automatic restore script generation for each repository
-
-### Features
-
-- Commit decrease detection (configurable threshold, default 10%)
-- Repository size monitoring (default 30% threshold)
-- Protected snapshots excluded from cleanup
-- Protected reports preserved permanently
-- User-friendly restore script with interactive prompts
-- Automatic permission and Git hooks fixing
-- Case-insensitive organization name matching
-
-### Documentation
-
-- English and Chinese README
-- Deployment guide
-- Crontab configuration examples
-- Report examples (normal and alert scenarios)
-- Recovery usage guide
-- MIT License
-
----
-
-## Upgrade Guide
-
-### From v1.0.0 to v1.1.0
-
-**No breaking changes!** The upgrade is seamless:
-
-1. **Update files**:
-   ```bash
-   git pull origin main
-   pip install -r requirements.txt
-   ```
-
-2. **Optional: Create config file** (recommended):
-   ```bash
-   cp config.example.yaml config.yaml
-   vim config.yaml
-   ```
-
-3. **Continue using as before** - All existing scripts work without changes!
-
-**New features available**:
-- Use `--show-config` to see current configuration
-- Use `--validate-config` to check configuration
-- Use `-c config.yaml` to specify custom config file
-
----
-
-[1.1.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.1.0
-[1.0.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.0.0
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [1.0.0] - 2026-01-24
-
-### Added
-- 🔄 Daily snapshot backups using hard-links for space efficiency
-- 📦 Monthly Git bundle archives for long-term storage
-- 🔍 Smart anomaly detection (commit count and repository size monitoring)
-- 🔒 Automatic protection of pre-anomaly snapshots and reports
-- 📊 Comprehensive backup reports with statistics and alerts
-- ⚡ Multiple recovery options (in-place, new repo, bundle export)
-- 🎯 Organization/user filtering for targeted backups
-- 💾 Configurable retention policies for snapshots and archives
-- 📝 Detailed logging with timestamps
-- 🛠️ Automatic restore script generation for each repository
-
-### Features
-- Commit decrease detection (configurable threshold, default 10%)
-- Repository size monitoring (default 30% threshold)
-- Protected snapshots are excluded from cleanup
-- Protected reports are preserved permanently
-- User-friendly restore script with interactive prompts
-- Automatic permission and Git hooks fixing
-- Support for case-insensitive organization name matching
-
-### Documentation
-- English and Chinese README
-- Deployment guide
-- Crontab configuration examples
-- Report examples (normal and alert scenarios)
-- Recovery usage guide
-- MIT License
-
-[1.0.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.0.0

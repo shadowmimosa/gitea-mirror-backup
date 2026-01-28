@@ -442,7 +442,7 @@ python gitea_mirror_backup.py --cleanup
 - **[Docker 部署](docs/docker.md)** - Docker 部署指南
 - **[迁移指南](docs/MIGRATION-GUIDE.md)** - 配置迁移指南
 - **[示例文件](examples/)** - 配置和报告示例
-- **[更新日志](CHANGELOG.md)** - 版本历史
+- **[更新日志](CHANGELOG.md)** - 版本历史 ([English](CHANGELOG_EN.md))
 
 ## 🤝 贡献
 
