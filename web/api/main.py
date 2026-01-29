@@ -31,11 +31,12 @@ async def lifespan(app: FastAPI):
     print("初始化数据库...")
     init_db()
 
-    # 创建默认管理员用户
+    # 创建或更新默认管理员用户
     db = SessionLocal()
     try:
         admin = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
         if not admin:
+            # 用户不存在，创建新用户
             print("创建默认管理员用户...")
             admin = User(
                 username=settings.DEFAULT_ADMIN_USERNAME,
@@ -50,6 +51,18 @@ async def lifespan(app: FastAPI):
             print(f"   用户名: {settings.DEFAULT_ADMIN_USERNAME}")
             print(f"   密码: {settings.DEFAULT_ADMIN_PASSWORD}")
             print("   警告: 请立即修改默认密码！")
+        else:
+            # 用户已存在，检查是否需要更新
+            print(f"管理员用户 '{settings.DEFAULT_ADMIN_USERNAME}' 已存在")
+            # 如果环境变量中配置了非默认密码，则更新
+            if settings.DEFAULT_ADMIN_PASSWORD != "admin123":
+                print("检测到自定义密码，更新管理员密码...")
+                admin.hashed_password = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
+                admin.email = settings.DEFAULT_ADMIN_EMAIL
+                db.commit()
+                print("✓ 管理员密码已更新")
+                print(f"   用户名: {settings.DEFAULT_ADMIN_USERNAME}")
+                print(f"   新密码: {settings.DEFAULT_ADMIN_PASSWORD}")
     finally:
         db.close()
 
