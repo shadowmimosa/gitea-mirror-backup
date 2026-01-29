@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-01-29
+
+### Fixed
+
+- 🐛 **Web Service Path Configuration Issue**
+  - Fixed Web service unable to correctly read backup data
+  - Unified configuration loading logic for backup, cron, and web services
+  - Web service now also uses `ConfigLoader` to read `config.yaml`
+  - Configuration priority: environment variables > config.yaml > defaults
+
+### Added
+
+- ✨ **Configurable Default Admin Account**
+  - Support configuring default admin account via environment variables
+  - New environment variables: `DEFAULT_ADMIN_USERNAME`, `DEFAULT_ADMIN_PASSWORD`, `DEFAULT_ADMIN_EMAIL`
+  - Create admin account using configuration on first startup
+  - Automatically update password if non-default password is configured for existing user
+
+- 🔄 **Automatic Version Retrieval**
+  - New system info API: `GET /api/system/info`
+  - Frontend Settings page automatically retrieves version from API
+  - Version number maintained centrally in `web/api/config.py`
+  - No need to manually update version in multiple places
+
+### Changed
+
+- 🔧 **Web Configuration System Refactoring**
+  - `web/api/config.py` integrated with `ConfigLoader`
+  - `BACKUP_ROOT` changed to dynamic property, supporting multi-level configuration
+  - Maintains completely consistent configuration logic with backup service
+
+- 📝 **Environment Variable Documentation Update**
+  - `env.example` added admin account configuration instructions
+  - Added security recommendations and configuration examples
+
+### Security
+
+- 🔐 Support custom admin account, avoid using default account
+- 🔐 Automatic password update mechanism for easy password management
+- 🔐 Production environments must change default password
+
+### Upgrade Notes
+
+Configure in `.env` file:
+```bash
+DEFAULT_ADMIN_USERNAME=myadmin
+DEFAULT_ADMIN_PASSWORD=MySecurePassword123
+DEFAULT_ADMIN_EMAIL=admin@mydomain.com
+```
+
+Update steps:
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+docker compose logs web
+```
+
 ## [1.4.2] - 2026-01-28
 
 ### Changed
@@ -687,7 +745,6 @@ docker-compose run --rm gitea-backup
    cp config.example.yaml config.yaml
    vim config.yaml
    ```
-
 3. **Continue using as before** - All existing scripts work without changes!
 
 **New features**:
@@ -710,4 +767,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.2.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.2.0
 [1.1.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.1.0
 [1.0.0]: https://github.com/yourusername/gitea-mirror-backup/releases/tag/v1.0.0
+
 

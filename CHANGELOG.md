@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [1.4.3] - 2026-01-29
+
+### Fixed
+
+- 🐛 **Web 服务路径配置问题**
+  - 修复 Web 服务无法正确读取备份数据的问题
+  - 统一 backup、cron、web 三个服务的配置加载逻辑
+  - Web 服务现在也使用 `ConfigLoader` 读取 `config.yaml`
+  - 配置优先级：环境变量 > config.yaml > 默认值
+
+### Added
+
+- ✨ **默认管理员账号可配置**
+  - 支持通过环境变量配置默认管理员账号
+  - 新增环境变量：`DEFAULT_ADMIN_USERNAME`、`DEFAULT_ADMIN_PASSWORD`、`DEFAULT_ADMIN_EMAIL`
+  - 首次启动时使用配置创建管理员账号
+  - 已存在用户时，如果配置了非默认密码会自动更新
+
+- 🔄 **版本号自动获取**
+  - 新增系统信息 API：`GET /api/system/info`
+  - 前端 Settings 页面自动从 API 获取版本号
+  - 版本号统一在 `web/api/config.py` 中维护
+  - 无需手动修改多处版本号
+
+### Changed
+
+- 🔧 **Web 配置系统重构**
+  - `web/api/config.py` 集成 `ConfigLoader`
+  - `BACKUP_ROOT` 改为动态属性，支持多级配置
+  - 与 backup 服务保持完全一致的配置逻辑
+
+- 📝 **环境变量文档更新**
+  - `env.example` 添加管理员账号配置说明
+  - 添加安全建议和配置示例
+
+### Security
+
+- 🔐 支持自定义管理员账号，避免使用默认账号
+- 🔐 自动更新密码机制，方便密码管理
+- 🔐 建议生产环境必须修改默认密码
+
+### Upgrade Notes
+
+在 `.env` 文件中配置：
+```bash
+DEFAULT_ADMIN_USERNAME=myadmin
+DEFAULT_ADMIN_PASSWORD=MySecurePassword123
+DEFAULT_ADMIN_EMAIL=admin@mydomain.com
+```
+
+更新步骤：
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+docker compose logs web
+```
+
 ## [1.4.2] - 2026-01-28
 
 ### Changed
@@ -691,7 +750,6 @@ docker-compose run --rm gitea-backup
    git pull
    pip install -r requirements.txt
    ```
-
 2. **可选：创建配置文件**（推荐）:
    ```bash
    cp config.example.yaml config.yaml
@@ -704,3 +762,4 @@ docker-compose run --rm gitea-backup
 - 使用 `--show-config` 查看当前配置
 - 使用 `--validate-config` 检查配置
 - 使用 `-c config.yaml` 指定自定义配置文件
+
