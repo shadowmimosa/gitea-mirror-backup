@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
-from src.config_loader import ConfigLoader
 
 # 添加项目根目录到 Python 路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+from src.config_loader import ConfigLoader
 
 
 class Settings(BaseSettings):
@@ -42,6 +43,11 @@ class Settings(BaseSettings):
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FILE: Optional[str] = None
+
+    # 默认管理员账号配置
+    DEFAULT_ADMIN_USERNAME: str = "admin"
+    DEFAULT_ADMIN_PASSWORD: str = "admin123"
+    DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
 
     # 配置加载器实例
     _config_loader: Optional[ConfigLoader] = None

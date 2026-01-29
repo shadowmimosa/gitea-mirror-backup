@@ -18,6 +18,7 @@ from .routers import (
     repositories_router,
     snapshots_router,
     reports_router,
+    system_router,
 )
 from ..utils.auth import get_password_hash
 
@@ -33,21 +34,21 @@ async def lifespan(app: FastAPI):
     # 创建默认管理员用户
     db = SessionLocal()
     try:
-        admin = db.query(User).filter(User.username == "admin").first()
+        admin = db.query(User).filter(User.username == settings.DEFAULT_ADMIN_USERNAME).first()
         if not admin:
             print("创建默认管理员用户...")
             admin = User(
-                username="admin",
-                email="admin@example.com",
-                hashed_password=get_password_hash("admin123"),
+                username=settings.DEFAULT_ADMIN_USERNAME,
+                email=settings.DEFAULT_ADMIN_EMAIL,
+                hashed_password=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
                 is_active=True,
                 is_admin=True,
             )
             db.add(admin)
             db.commit()
             print("默认管理员用户已创建")
-            print("   用户名: admin")
-            print("   密码: admin123")
+            print(f"   用户名: {settings.DEFAULT_ADMIN_USERNAME}")
+            print(f"   密码: {settings.DEFAULT_ADMIN_PASSWORD}")
             print("   警告: 请立即修改默认密码！")
     finally:
         db.close()
@@ -85,6 +86,7 @@ app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 app.include_router(repositories_router, prefix=settings.API_PREFIX)
 app.include_router(snapshots_router, prefix=settings.API_PREFIX)
 app.include_router(reports_router, prefix=settings.API_PREFIX)
+app.include_router(system_router, prefix=settings.API_PREFIX)
 
 
 # 挂载前端静态文件（生产环境）
