@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.7] - 2026-06-08
+
+### Added
+
+- **仪表板受保护快照统计**
+  - `/api/dashboard/stats` 返回 `protected_snapshots` 计数
+  - 仪表板可点击跳转至「仅受保护」快照列表
+
+- **报告元数据 sidecar**
+  - 备份报告生成时同步写入 `report-xxx.md.meta.json`
+  - Web 报告列表优先读取 meta 文件判断异常状态
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup web
+docker compose up -d web
+```
+
 ## [1.4.6] - 2026-06-08
 
 ### Added

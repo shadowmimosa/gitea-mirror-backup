@@ -9,6 +9,7 @@ import sys
 import shutil
 import subprocess
 import os
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
@@ -1126,6 +1127,13 @@ def generate_report():
     # 检查是否有异常
     need_review_file = backup_root / ".need_review"
     has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
+    alert_repos = []
+    if has_alerts:
+        alert_repos = [
+            line.strip()
+            for line in need_review_file.read_text(encoding='utf-8').splitlines()
+            if line.strip()
+        ]
 
     # 生成报告
     with open(report_file, 'w', encoding='utf-8') as f:
@@ -1305,6 +1313,23 @@ def generate_report():
         f.write("- 查看报告保护: `cat /path/to/report-xxx.md.protected`\n")
         f.write("- 取消保护: 删除对应的 `.protected` 文件\n")
         f.write("- 再次运行备份后，超期资源将被清理\n")
+
+    meta_file = report_file.with_suffix('.md.meta.json')
+    try:
+        meta_file.write_text(
+            json.dumps(
+                {
+                    "has_alerts": has_alerts,
+                    "generated_at": datetime.now().isoformat(),
+                    "alert_repos": alert_repos,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding='utf-8',
+        )
+    except Exception as e:
+        logger.warning(f"写入报告元数据失败: {e}")
 
     # 检查是否需要保护此报告（已经在前面检查过了）
     if has_alerts:

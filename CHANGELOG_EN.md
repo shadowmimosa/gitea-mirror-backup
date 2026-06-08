@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.7] - 2026-06-08
+
+### Added
+
+- **Dashboard protected snapshot count**
+  - `/api/dashboard/stats` returns `protected_snapshots` count
+  - Dashboard link jumps to protected-only snapshot list
+
+- **Report metadata sidecar**
+  - Backup writes `report-xxx.md.meta.json` alongside each report
+  - Web report list prefers meta file for alert detection
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup web
+docker compose up -d web
+```
+
 ## [1.4.6] - 2026-06-08
 
 ### Added

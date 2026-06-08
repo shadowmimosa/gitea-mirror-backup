@@ -31,6 +31,7 @@ def get_backup_stats(backup_service: BackupService) -> dict:
     stats = {
         "total_repositories": 0,
         "total_snapshots": 0,
+        "protected_snapshots": 0,
         "total_disk_usage": 0,
         "last_backup_time": None,
         "success_rate": 100.0,
@@ -43,6 +44,7 @@ def get_backup_stats(backup_service: BackupService) -> dict:
 
     stats["total_repositories"] = len(repos)
     stats["total_snapshots"] = sum(r.get("snapshot_count", 0) for r in repos)
+    stats["protected_snapshots"] = backup_service.count_snapshots(is_protected=True)
     stats["total_disk_usage"] = sum(r.get("disk_usage", 0) for r in repos)
     stats["failed_backups"] = sum(1 for r in repos if r.get("status") == "warning")
 

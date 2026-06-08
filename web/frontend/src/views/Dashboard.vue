@@ -52,6 +52,11 @@
         <n-descriptions-item label="失败备份数">
           {{ stats.failed_backups }}
         </n-descriptions-item>
+        <n-descriptions-item label="受保护快照">
+          <n-button text type="warning" @click="goProtectedSnapshots">
+            🔒 {{ stats.protected_snapshots }}
+          </n-button>
+        </n-descriptions-item>
       </n-descriptions>
     </n-card>
   </div>
@@ -59,15 +64,18 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NGrid, NGi, NCard, NStatistic, NIcon, NDivider, NDescriptions, NDescriptionsItem, useMessage } from 'naive-ui'
+import { useRouter } from 'vue-router'
+import { NGrid, NGi, NCard, NStatistic, NIcon, NDivider, NDescriptions, NDescriptionsItem, NButton, useMessage } from 'naive-ui'
 import { FolderOpenOutline, CameraOutline, ServerOutline, CheckmarkCircleOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 
 const message = useMessage()
+const router = useRouter()
 
 interface DashboardStats {
   total_repositories: number
   total_snapshots: number
+  protected_snapshots: number
   total_disk_usage: number
   last_backup_time: string | null
   success_rate: number
@@ -77,11 +85,16 @@ interface DashboardStats {
 const stats = ref<DashboardStats>({
   total_repositories: 0,
   total_snapshots: 0,
+  protected_snapshots: 0,
   total_disk_usage: 0,
   last_backup_time: null,
   success_rate: 0,
   failed_backups: 0
 })
+
+function goProtectedSnapshots() {
+  router.push({ path: '/snapshots', query: { protected: 'true' } })
+}
 
 async function fetchStats() {
   try {

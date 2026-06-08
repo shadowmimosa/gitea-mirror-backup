@@ -164,6 +164,7 @@ class DashboardStats(BaseModel):
 
     total_repositories: int
     total_snapshots: int
+    protected_snapshots: int = 0
     total_disk_usage: int  # 字节
     last_backup_time: Optional[datetime] = None
     success_rate: float  # 0-100
