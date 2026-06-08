@@ -92,10 +92,10 @@ const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const repositorySearch = ref('')
-const protectedFilter = ref<string | null>(null)
+const protectedFilter = ref<string>('')
 
 const protectedOptions = [
-  { label: '全部状态', value: null },
+  { label: '全部状态', value: '' },
   { label: '仅受保护', value: 'true' },
   { label: '仅正常', value: 'false' }
 ]
@@ -127,7 +127,7 @@ function showProtectedOnly() {
 
 function resetFilters() {
   repositorySearch.value = ''
-  protectedFilter.value = null
+  protectedFilter.value = ''
   applyFilters()
 }
 
