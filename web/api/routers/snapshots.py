@@ -28,6 +28,8 @@ async def list_snapshots(
     page: int = 1,
     page_size: int = 10,
     include_size: bool = False,
+    is_protected: Optional[bool] = None,
+    repository_search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
 ):
@@ -38,12 +40,16 @@ async def list_snapshots(
     - **page**: 页码（从 1 开始，默认 1）
     - **page_size**: 每页数量（默认 10）
     - **include_size**: 是否计算大小（默认 False，设为 True 会变慢）
+    - **is_protected**: 筛选受保护快照（true/false，不传则全部）
+    - **repository_search**: 仓库名模糊搜索
     """
     snapshots = backup_service.get_snapshots(
         repository=repository,
         page=page,
         page_size=page_size,
-        include_size=include_size
+        include_size=include_size,
+        is_protected=is_protected,
+        repository_search=repository_search,
     )
     return snapshots
 
@@ -51,6 +57,8 @@ async def list_snapshots(
 @router.get("/count", summary="获取快照总数")
 async def count_snapshots(
     repository: Optional[str] = None,
+    is_protected: Optional[bool] = None,
+    repository_search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
 ):
@@ -58,8 +66,14 @@ async def count_snapshots(
     获取快照总数
 
     - **repository**: 仓库名称（可选，不指定则返回所有快照总数）
+    - **is_protected**: 筛选受保护快照
+    - **repository_search**: 仓库名模糊搜索
     """
-    count = backup_service.count_snapshots(repository=repository)
+    count = backup_service.count_snapshots(
+        repository=repository,
+        is_protected=is_protected,
+        repository_search=repository_search,
+    )
     return {"count": count}
 
 

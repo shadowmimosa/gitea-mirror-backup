@@ -238,6 +238,36 @@ class ReportDetail(ReportInfo):
     content: str  # Markdown 内容
 
 
+# ============ 恢复相关 ============
+
+
+class RestorePreviewRequest(BaseModel):
+    """恢复命令预览请求"""
+
+    repository: str
+    snapshot_id: str
+    mode: str = "interactive"  # interactive, inplace, export_new, bundle
+    new_repo_name: Optional[str] = None
+    bundle_path: Optional[str] = None
+
+
+class RestorePreviewResponse(BaseModel):
+    """恢复命令预览响应"""
+
+    repository: str
+    snapshot_id: str
+    mode: str
+    snapshot_path: str
+    restore_script_path: str
+    host_repo_path: str
+    container_repo_path: str
+    is_docker: bool
+    commands: list[str]
+    warnings: list[str]
+    notes: list[str]
+    archives: list[str] = []
+
+
 # ============ 通用响应 ============
 
 

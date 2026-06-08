@@ -128,6 +128,8 @@ class BackupService:
         page: int = 1,
         page_size: int = 10,
         include_size: bool = False,
+        is_protected: Optional[bool] = None,
+        repository_search: Optional[str] = None,
     ) -> List[Dict]:
         """
         获取快照列表（支持分页）
@@ -144,39 +146,18 @@ class BackupService:
         """
 
         # 第一步：快速收集所有快照的基本信息（不计算大小）
-        snapshot_basics = []
+        snapshot_basics = self._collect_snapshot_basics(repository)
 
-        if not self.backup_base_path.exists():
-            return []
+        snapshot_basics = self._filter_snapshots(
+            snapshot_basics,
+            is_protected=is_protected,
+            repository_search=repository_search,
+        )
 
-        # 如果指定了仓库，只扫描该仓库
-        if repository:
-            parts = repository.split('/')
-            if len(parts) == 2:
-                owner, repo_name = parts
-                repo_dir = self.backup_base_path / owner / repo_name
-                if repo_dir.exists():
-                    snapshot_basics.extend(
-                        self._get_repo_snapshots_basic(owner, repo_name, repo_dir)
-                    )
-        else:
-            # 扫描所有仓库的快照
-            for owner_dir in self.backup_base_path.iterdir():
-                if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
-                    continue
-
-                for repo_dir in owner_dir.iterdir():
-                    if not repo_dir.is_dir():
-                        continue
-
-                    snapshot_basics.extend(
-                        self._get_repo_snapshots_basic(
-                            owner_dir.name, repo_dir.name, repo_dir
-                        )
-                    )
-
-        # 第二步：按创建时间倒序排序
-        snapshot_basics.sort(key=lambda x: x["created_at"], reverse=True)
+        # 第二步：受保护优先，再按创建时间倒序
+        snapshot_basics.sort(
+            key=lambda x: (x["is_protected"], x["created_at"]), reverse=True
+        )
 
         # 第三步：只对当前页的快照计算大小（如果需要）
         start_idx = (page - 1) * page_size
@@ -195,6 +176,61 @@ class BackupService:
                 del snapshot['_path']
 
         return page_snapshots
+
+    def _collect_snapshot_basics(
+        self, repository: Optional[str] = None
+    ) -> List[Dict]:
+        """收集快照基本信息（不含大小）"""
+        snapshot_basics: List[Dict] = []
+
+        if not self.backup_base_path.exists():
+            return snapshot_basics
+
+        if repository:
+            parts = repository.split('/')
+            if len(parts) == 2:
+                owner, repo_name = parts
+                repo_dir = self.backup_base_path / owner / repo_name
+                if repo_dir.exists():
+                    snapshot_basics.extend(
+                        self._get_repo_snapshots_basic(owner, repo_name, repo_dir)
+                    )
+        else:
+            for owner_dir in self.backup_base_path.iterdir():
+                if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
+                    continue
+                if owner_dir.name == 'reports':
+                    continue
+
+                for repo_dir in owner_dir.iterdir():
+                    if not repo_dir.is_dir():
+                        continue
+
+                    snapshot_basics.extend(
+                        self._get_repo_snapshots_basic(
+                            owner_dir.name, repo_dir.name, repo_dir
+                        )
+                    )
+
+        return snapshot_basics
+
+    @staticmethod
+    def _filter_snapshots(
+        snapshots: List[Dict],
+        is_protected: Optional[bool] = None,
+        repository_search: Optional[str] = None,
+    ) -> List[Dict]:
+        """按保护状态与仓库名筛选"""
+        result = snapshots
+        if repository_search:
+            keyword = repository_search.strip().lower()
+            if keyword:
+                result = [
+                    s for s in result if keyword in s["repository"].lower()
+                ]
+        if is_protected is not None:
+            result = [s for s in result if s["is_protected"] == is_protected]
+        return result
 
     def _get_repo_snapshots(
         self, owner: str, repo_name: str, repo_dir: Path
@@ -334,44 +370,30 @@ class BackupService:
         except Exception:
             return 0
 
-    def count_snapshots(self, repository: Optional[str] = None) -> int:
+    def count_snapshots(
+        self,
+        repository: Optional[str] = None,
+        is_protected: Optional[bool] = None,
+        repository_search: Optional[str] = None,
+    ) -> int:
         """
         获取快照总数（快速，不计算大小）
 
         Args:
             repository: 仓库全名 "owner/repo"（可选）
+            is_protected: 是否仅统计受保护快照
+            repository_search: 仓库名模糊搜索
 
         Returns:
             快照总数
         """
-        count = 0
-
-        if not self.backup_base_path.exists():
-            return count
-
-        if repository:
-            parts = repository.split('/')
-            if len(parts) == 2:
-                owner, repo_name = parts
-                repo_dir = self.backup_base_path / owner / repo_name
-                if repo_dir.exists():
-                    snapshots_dir = repo_dir / "snapshots"
-                    if snapshots_dir.exists():
-                        count = len([s for s in snapshots_dir.iterdir() if s.is_dir()])
-        else:
-            for owner_dir in self.backup_base_path.iterdir():
-                if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
-                    continue
-
-                for repo_dir in owner_dir.iterdir():
-                    if not repo_dir.is_dir():
-                        continue
-
-                    snapshots_dir = repo_dir / "snapshots"
-                    if snapshots_dir.exists():
-                        count += len([s for s in snapshots_dir.iterdir() if s.is_dir()])
-
-        return count
+        snapshot_basics = self._collect_snapshot_basics(repository)
+        snapshot_basics = self._filter_snapshots(
+            snapshot_basics,
+            is_protected=is_protected,
+            repository_search=repository_search,
+        )
+        return len(snapshot_basics)
 
     def get_reports(self) -> List[Dict]:
         """

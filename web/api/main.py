@@ -19,6 +19,7 @@ from .routers import (
     snapshots_router,
     reports_router,
     system_router,
+    restore_router,
 )
 from ..utils.auth import get_password_hash
 
@@ -99,6 +100,7 @@ app.include_router(dashboard_router, prefix=settings.API_PREFIX)
 app.include_router(repositories_router, prefix=settings.API_PREFIX)
 app.include_router(snapshots_router, prefix=settings.API_PREFIX)
 app.include_router(reports_router, prefix=settings.API_PREFIX)
+app.include_router(restore_router, prefix=settings.API_PREFIX)
 app.include_router(system_router, prefix=settings.API_PREFIX)
 
 

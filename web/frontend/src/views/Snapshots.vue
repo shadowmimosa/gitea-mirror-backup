@@ -10,7 +10,25 @@
         </n-button>
       </template>
 
-      <n-space style="margin-bottom: 12px;">
+      <n-space vertical style="margin-bottom: 12px; width: 100%;">
+        <n-space wrap>
+          <n-input
+            v-model:value="repositorySearch"
+            placeholder="搜索仓库 owner/repo"
+            clearable
+            style="width: 220px;"
+            @keyup.enter="applyFilters"
+          />
+          <n-select
+            v-model:value="protectedFilter"
+            :options="protectedOptions"
+            style="width: 140px;"
+          />
+          <n-button @click="applyFilters">筛选</n-button>
+          <n-button @click="showProtectedOnly">仅受保护</n-button>
+          <n-button @click="resetFilters">重置</n-button>
+        </n-space>
+        <n-space>
         <n-button 
           type="error" 
           :disabled="selectedSnapshots.length === 0 || hasProtectedSelected"
@@ -24,6 +42,7 @@
         <n-text v-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
           * 已选择的快照中包含受保护的快照，无法删除
         </n-text>
+        </n-space>
       </n-space>
 
       <n-data-table
@@ -57,10 +76,12 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, computed } from 'vue'
-import { NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, NText, NPagination, useMessage, useDialog } from 'naive-ui'
+import { useRoute } from 'vue-router'
+import { NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, NText, NPagination, NInput, NSelect, useMessage, useDialog } from 'naive-ui'
 import { RefreshOutline, TrashOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 
+const route = useRoute()
 const message = useMessage()
 const dialog = useDialog()
 
@@ -70,6 +91,45 @@ const selectedSnapshots = ref<string[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
+const repositorySearch = ref('')
+const protectedFilter = ref<string | null>(null)
+
+const protectedOptions = [
+  { label: '全部状态', value: null },
+  { label: '仅受保护', value: 'true' },
+  { label: '仅正常', value: 'false' }
+]
+
+function buildFilterParams() {
+  const params: Record<string, unknown> = {
+    page: currentPage.value,
+    page_size: pageSize.value,
+    include_size: true
+  }
+  if (repositorySearch.value.trim()) {
+    params.repository_search = repositorySearch.value.trim()
+  }
+  if (protectedFilter.value === 'true') params.is_protected = true
+  if (protectedFilter.value === 'false') params.is_protected = false
+  return params
+}
+
+function applyFilters() {
+  currentPage.value = 1
+  selectedSnapshots.value = []
+  fetchSnapshots()
+}
+
+function showProtectedOnly() {
+  protectedFilter.value = 'true'
+  applyFilters()
+}
+
+function resetFilters() {
+  repositorySearch.value = ''
+  protectedFilter.value = null
+  applyFilters()
+}
 
 const hasProtectedSelected = computed(() => {
   return snapshots.value.some((s: any) => {
@@ -171,18 +231,16 @@ function handleCheck(keys: Array<string | number>) {
 async function fetchSnapshots() {
   loading.value = true
   try {
-    // 获取总数
-    const countResponse = await api.get('/snapshots/count')
+    const filterParams = buildFilterParams()
+    const countParams = { ...filterParams }
+    delete countParams.page
+    delete countParams.page_size
+    delete countParams.include_size
+
+    const countResponse = await api.get('/snapshots/count', { params: countParams })
     totalCount.value = countResponse.data.count
-    
-    // 获取当前页数据（包含大小）
-    const response = await api.get('/snapshots', {
-      params: {
-        page: currentPage.value,
-        page_size: pageSize.value,
-        include_size: true
-      }
-    })
+
+    const response = await api.get('/snapshots', { params: filterParams })
     snapshots.value = response.data
   } catch (error) {
     message.error('获取快照列表失败')
@@ -264,6 +322,9 @@ function formatDate(date: string): string {
 }
 
 onMounted(() => {
+  if (route.query.protected === 'true') {
+    protectedFilter.value = 'true'
+  }
   fetchSnapshots()
 })
 </script>

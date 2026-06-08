@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.6] - 2026-06-08
+
+### Added
+
+- **快照列表筛选**
+  - API 支持 `is_protected`、`repository_search` 查询参数
+  - 快照列表页增加仓库搜索、保护状态筛选及「仅受保护」快捷按钮
+  - 受保护快照默认排在列表前面
+
+- **半自动恢复向导**
+  - 新增 `POST /api/restore/preview`，生成可复制执行的恢复命令
+  - 仓库详情页增加恢复向导，Docker 部署自动输出 `docker compose run --entrypoint bash` 命令
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.5] - 2026-06-08
 
 ### Fixed

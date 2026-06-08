@@ -13,12 +13,17 @@
       </template>
 
       <template #header-extra>
-        <n-button type="primary" @click="fetchSnapshots">
+        <n-space>
+          <n-button type="warning" @click="openRestoreModal">
+            恢复
+          </n-button>
+          <n-button type="primary" @click="fetchSnapshots">
           <template #icon>
             <n-icon><RefreshOutline /></n-icon>
           </template>
           刷新
-        </n-button>
+          </n-button>
+        </n-space>
       </template>
 
       <!-- 仓库信息 -->
@@ -93,6 +98,68 @@
         </n-pagination>
       </div>
     </n-card>
+
+    <n-modal
+      v-model:show="showRestoreModal"
+      preset="card"
+      title="恢复向导"
+      style="width: 640px;"
+    >
+      <n-space vertical size="large">
+        <n-alert type="info" :show-icon="false">
+          生成可在宿主机执行的恢复命令，Web 不会自动运行 docker 操作。
+        </n-alert>
+
+        <n-form-item label="选择快照">
+          <n-select
+            v-model:value="restoreSnapshotId"
+            :options="restoreSnapshotOptions"
+            placeholder="选择要恢复的快照"
+          />
+        </n-form-item>
+
+        <n-form-item label="恢复方式">
+          <n-radio-group v-model:value="restoreMode">
+            <n-space vertical>
+              <n-radio value="interactive">交互式 restore.sh（推荐）</n-radio>
+              <n-radio value="inplace">恢复到原位置（覆盖原仓库）</n-radio>
+              <n-radio value="export_new">导出为新仓库</n-radio>
+              <n-radio value="bundle">导出为 Git Bundle</n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+
+        <n-form-item v-if="restoreMode === 'export_new'" label="新仓库名称">
+          <n-input v-model:value="restoreNewRepoName" placeholder="例如 my-repo-restored" />
+        </n-form-item>
+
+        <n-form-item v-if="restoreMode === 'bundle'" label="Bundle 路径">
+          <n-input v-model:value="restoreBundlePath" placeholder="/tmp/owner-repo.bundle" />
+        </n-form-item>
+
+        <n-button type="primary" :loading="restoreLoading" @click="generateRestoreCommand">
+          生成命令
+        </n-button>
+
+        <div v-if="restorePreview">
+          <n-alert v-for="(w, i) in restorePreview.warnings" :key="'w-' + i" type="warning" style="margin-bottom: 8px;">
+            {{ w }}
+          </n-alert>
+          <n-input
+            type="textarea"
+            :rows="8"
+            readonly
+            :value="restoreCommandText"
+          />
+          <n-space style="margin-top: 8px;">
+            <n-button @click="copyRestoreCommand">复制命令</n-button>
+          </n-space>
+          <n-text v-if="restorePreview.archives?.length" depth="3" style="display: block; margin-top: 12px; font-size: 12px;">
+            归档备选：{{ restorePreview.archives.join('；') }}
+          </n-text>
+        </div>
+      </n-space>
+    </n-modal>
   </div>
 </template>
 
@@ -101,7 +168,9 @@ import { ref, h, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { 
   NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, 
-  NDivider, NDescriptions, NDescriptionsItem, NText, NPagination, useMessage, useDialog 
+  NDivider, NDescriptions, NDescriptionsItem, NText, NPagination,
+  NModal, NAlert, NFormItem, NSelect, NRadioGroup, NRadio, NInput,
+  useMessage, useDialog 
 } from 'naive-ui'
 import { RefreshOutline, TrashOutline, ArrowBackOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
@@ -118,6 +187,32 @@ const selectedSnapshots = ref<string[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
+
+const showRestoreModal = ref(false)
+const restoreSnapshotId = ref<string | null>(null)
+const restoreMode = ref('interactive')
+const restoreNewRepoName = ref('')
+const restoreBundlePath = ref('')
+const restoreLoading = ref(false)
+const restorePreview = ref<any>(null)
+const allSnapshotsForRestore = ref<any[]>([])
+
+const restoreSnapshotOptions = computed(() =>
+  allSnapshotsForRestore.value.map((s: any) => ({
+    label: `${s.is_protected ? '🔒 ' : ''}${s.id} (${formatDate(s.created_at)})`,
+    value: s.id
+  }))
+)
+
+const restoreCommandText = computed(() => {
+  if (!restorePreview.value) return ''
+  const lines = [
+    ...(restorePreview.value.notes || []),
+    '',
+    ...(restorePreview.value.commands || []),
+  ]
+  return lines.join('\n')
+})
 
 const hasProtectedSelected = computed(() => {
   return snapshots.value.some((s: any) => 
@@ -301,6 +396,65 @@ function formatBytes(bytes: number): string {
 function formatDate(date: string | null): string {
   if (!date) return '暂无'
   return new Date(date).toLocaleString('zh-CN')
+}
+
+async function openRestoreModal() {
+  showRestoreModal.value = true
+  restorePreview.value = null
+  try {
+    const response = await api.get('/snapshots', {
+      params: {
+        repository: repositoryName.value,
+        page: 1,
+        page_size: 200,
+        include_size: false
+      }
+    })
+    allSnapshotsForRestore.value = response.data || []
+    const preferred = allSnapshotsForRestore.value.find((s: any) => s.is_protected)
+      || allSnapshotsForRestore.value[0]
+    restoreSnapshotId.value = preferred?.id || null
+  } catch (error) {
+    message.error('加载快照列表失败')
+    console.error(error)
+  }
+}
+
+async function generateRestoreCommand() {
+  if (!restoreSnapshotId.value) {
+    message.warning('请选择快照')
+    return
+  }
+  if (restoreMode.value === 'export_new' && !restoreNewRepoName.value.trim()) {
+    message.warning('请输入新仓库名称')
+    return
+  }
+
+  restoreLoading.value = true
+  try {
+    const response = await api.post('/restore/preview', {
+      repository: repositoryName.value,
+      snapshot_id: restoreSnapshotId.value,
+      mode: restoreMode.value,
+      new_repo_name: restoreNewRepoName.value || undefined,
+      bundle_path: restoreBundlePath.value || undefined
+    })
+    restorePreview.value = response.data
+  } catch (error: any) {
+    message.error(error.response?.data?.detail || '生成命令失败')
+    console.error(error)
+  } finally {
+    restoreLoading.value = false
+  }
+}
+
+async function copyRestoreCommand() {
+  try {
+    await navigator.clipboard.writeText(restoreCommandText.value)
+    message.success('已复制到剪贴板')
+  } catch {
+    message.error('复制失败，请手动选择复制')
+  }
 }
 
 onMounted(() => {
