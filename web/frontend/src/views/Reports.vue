@@ -2,17 +2,24 @@
   <div class="reports">
     <n-card title="报告列表">
       <template #header-extra>
-        <n-button type="primary" @click="fetchReports">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
+        <n-space>
+          <n-radio-group v-model:value="statusFilter" size="small">
+            <n-radio-button value="all">全部</n-radio-button>
+            <n-radio-button value="normal">正常</n-radio-button>
+            <n-radio-button value="alert">异常保留</n-radio-button>
+          </n-radio-group>
+          <n-button type="primary" @click="fetchReports">
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
+          </n-button>
+        </n-space>
       </template>
 
       <n-data-table
         :columns="columns"
-        :data="reports"
+        :data="filteredReports"
         :loading="loading"
         :pagination="pagination"
       />
@@ -33,7 +40,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, useMessage } from 'naive-ui'
+import { NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, NSpace, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
 import { RefreshOutline, DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
 import 'github-markdown-css/github-markdown-dark.css'
@@ -43,8 +50,17 @@ const message = useMessage()
 
 const loading = ref(false)
 const reports = ref<any[]>([])
+const statusFilter = ref<'all' | 'normal' | 'alert'>('all')
 const showModal = ref(false)
 const currentReport = ref<any>(null)
+
+const filteredReports = computed(() => {
+  if (statusFilter.value === 'all') return reports.value
+  if (statusFilter.value === 'alert') {
+    return reports.value.filter((r) => r.has_alerts || r.is_protected || r.status === 'alert')
+  }
+  return reports.value.filter((r) => !r.has_alerts && !r.is_protected && r.status !== 'alert')
+})
 
 const columns = [
   {
@@ -75,8 +91,10 @@ const columns = [
     title: '状态',
     key: 'status',
     render: (row: any) => {
-      if (row.is_protected) {
-        return h(NTag, { type: 'warning' }, { default: () => '🔒 已保护' })
+      const isAlert = row.has_alerts || row.is_protected || row.status === 'alert'
+      if (isAlert) {
+        const label = row.is_protected ? '🔒 异常保留' : '异常保留'
+        return h(NTag, { type: 'warning' }, { default: () => label })
       }
       return h(NTag, { type: 'success' }, { default: () => '正常' })
     }

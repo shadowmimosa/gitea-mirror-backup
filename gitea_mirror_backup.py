@@ -8,10 +8,11 @@ Gitea Docker 镜像仓库备份系统
 import sys
 import shutil
 import subprocess
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 import argparse
 
 # 导入配置加载器
@@ -555,18 +556,24 @@ class RepositoryBackup:
 
         # 5. 生成恢复脚本
         self.generate_restore_script()
+        self.generate_restore_via_docker_script()
 
     def generate_restore_script(self):
         """生成恢复脚本"""
         restore_script = self.backup_dir / "restore.sh"
+        container_repo_path = (
+            f"/data/git/repositories/{self.owner}/{self.repo_name}.git"
+        )
 
         script_content = f"""#!/bin/bash
 
 REPO_NAME="{self.full_name}"
-SNAPSHOT_DIR="{self.snapshot_dir}"
+SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
+SNAPSHOT_DIR="$SCRIPT_DIR/snapshots"
+ARCHIVE_DIR="$SCRIPT_DIR/archives"
 CONTAINER="{config.DOCKER_CONTAINER}"
 GIT_USER="{config.DOCKER_GIT_USER}"
-CONTAINER_REPO_PATH="/data/git/repositories/{self.owner}/{self.repo_name}.git"
+CONTAINER_REPO_PATH="{container_repo_path}"
 HOST_REPO_PATH="{self.repo_path}"
 
 echo "=========================================="
@@ -575,11 +582,37 @@ echo "=========================================="
 echo "仓库: $REPO_NAME"
 echo ""
 
-# 列出可用快照
+# 列出可用快照（仅目录）
 echo "可用的快照:"
-mapfile -t snapshots < <(ls -td "$SNAPSHOT_DIR"/* 2>/dev/null)
+mapfile -t snapshots < <(find "$SNAPSHOT_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r)
 if [ ${{#snapshots[@]}} -eq 0 ]; then
-    echo "错误: 没有找到快照"
+    echo "错误: 没有找到可用快照"
+    echo ""
+    echo "诊断信息:"
+    echo "  脚本目录: $SCRIPT_DIR"
+    if [ -d "$SNAPSHOT_DIR" ]; then
+        echo "  快照目录: $SNAPSHOT_DIR (存在但为空)"
+    else
+        echo "  快照目录: $SNAPSHOT_DIR (不存在)"
+    fi
+    if [ ! -f /.dockerenv ] && [[ "$SCRIPT_DIR" == /shared/* ]]; then
+        echo ""
+        echo "检测到 Docker 部署：请勿在宿主机直接运行本脚本。"
+        echo "请使用以下命令之一:"
+        echo "  docker compose run --rm -it --entrypoint bash backup $SCRIPT_DIR/restore.sh"
+        echo "  docker compose run --rm -it restore $SCRIPT_DIR/restore.sh"
+        echo "  $SCRIPT_DIR/restore-via-docker.sh"
+    elif [ -d "$ARCHIVE_DIR" ] && compgen -G "$ARCHIVE_DIR/*.bundle" > /dev/null; then
+        echo ""
+        echo "可用月度归档 (git bundle):"
+        ls -1 "$ARCHIVE_DIR"/*.bundle 2>/dev/null | sed 's/^/  /'
+        echo ""
+        echo "使用归档恢复示例:"
+        echo "  git clone \\"$ARCHIVE_DIR/archive-YYYYMM.bundle\\" restored-repo"
+    else
+        echo ""
+        echo "快照可能已被保留策略清理，请在 Web UI 查看仓库详情或重新执行备份。"
+    fi
     exit 1
 fi
 
@@ -708,7 +741,7 @@ case $restore_mode in
         chown -R $GIT_UID:$GIT_GID "$EXPORT_PATH"
 
         # 更新配置（移除镜像配置）
-        NEW_CONTAINER_PATH="/data/git/repositories/$(basename $(dirname $EXPORT_PATH))/${{new_repo_name}}.git"
+        NEW_CONTAINER_PATH="$(dirname "$CONTAINER_REPO_PATH")/${{new_repo_name}}.git"
         echo "3. 移除镜像配置..."
         docker exec -u $GIT_USER $CONTAINER git -C "$NEW_CONTAINER_PATH" config --unset remote.origin.url 2>/dev/null || true
         docker exec -u $GIT_USER $CONTAINER git -C "$NEW_CONTAINER_PATH" config --unset remote.origin.fetch 2>/dev/null || true
@@ -792,6 +825,98 @@ esac
 
         restore_script.write_text(script_content)
         restore_script.chmod(0o755)
+
+    def generate_restore_via_docker_script(self):
+        """生成 Docker 宿主机入口脚本"""
+        wrapper = self.backup_dir / "restore-via-docker.sh"
+        script_content = """#!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+MARKER_FILE="$BACKUP_ROOT/.restore-compose-dir"
+
+if [ -f "$MARKER_FILE" ]; then
+    COMPOSE_DIR="$(cat "$MARKER_FILE")"
+elif [ -n "${BACKUP_COMPOSE_DIR:-}" ]; then
+    COMPOSE_DIR="$BACKUP_COMPOSE_DIR"
+else
+    echo "错误: 未找到 Docker Compose 项目路径。"
+    echo "请设置环境变量 BACKUP_COMPOSE_DIR，或在备份时配置 COMPOSE_PROJECT_DIR。"
+    echo "也可直接运行:"
+    echo "  docker compose run --rm -it --entrypoint bash backup \\"$SCRIPT_DIR/restore.sh\\""
+    exit 1
+fi
+
+cd "$COMPOSE_DIR" || exit 1
+
+if docker compose config --services 2>/dev/null | grep -qx restore; then
+    exec docker compose run --rm -it restore "$SCRIPT_DIR/restore.sh"
+else
+    exec docker compose run --rm -it --entrypoint bash backup "$SCRIPT_DIR/restore.sh"
+fi
+"""
+        wrapper.write_text(script_content)
+        wrapper.chmod(0o755)
+
+
+def write_restore_compose_marker():
+    """记录 Docker Compose 项目目录，供 restore-via-docker.sh 使用"""
+    compose_dir = os.environ.get('COMPOSE_PROJECT_DIR', '').strip()
+    if not compose_dir:
+        return
+    marker = Path(config.BACKUP_ROOT) / '.restore-compose-dir'
+    try:
+        marker.write_text(compose_dir + '\n', encoding='utf-8')
+    except Exception as e:
+        logger.warning(f"写入 restore compose 标记失败: {e}")
+
+
+def regenerate_all_restore_scripts(dry_run: bool = False) -> Dict[str, int]:
+    """批量重新生成所有仓库的 restore.sh"""
+    backup_root = Path(config.BACKUP_ROOT)
+    repos_path = Path(config.GITEA_DATA_VOLUME) / config.GITEA_REPOS_PATH
+    stats = {"updated": 0, "skipped": 0, "failed": 0}
+
+    if not backup_root.exists():
+        logger.error(f"备份根目录不存在: {backup_root}")
+        return stats
+
+    for owner_dir in sorted(backup_root.iterdir()):
+        if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
+            continue
+        if owner_dir.name in ('reports',):
+            continue
+
+        for repo_dir in sorted(owner_dir.iterdir()):
+            if not repo_dir.is_dir():
+                continue
+            if not (repo_dir / "restore.sh").exists() and not (
+                repo_dir / "snapshots"
+            ).exists():
+                stats["skipped"] += 1
+                continue
+
+            owner = owner_dir.name
+            repo_name = repo_dir.name
+            repo_path = repos_path / owner / f"{repo_name}.git"
+
+            if dry_run:
+                logger.info(f"[dry-run] 将更新: {owner}/{repo_name}")
+                stats["updated"] += 1
+                continue
+
+            try:
+                backup = RepositoryBackup(repo_path)
+                backup.generate_restore_script()
+                backup.generate_restore_via_docker_script()
+                logger.info(f"已更新恢复脚本: {owner}/{repo_name}")
+                stats["updated"] += 1
+            except Exception as e:
+                logger.error(f"更新恢复脚本失败 {owner}/{repo_name}: {e}")
+                stats["failed"] += 1
+
+    return stats
 
 
 # ============ 报告生成 ============
@@ -1225,6 +1350,7 @@ def main():
     # 确保备份目录存在
     backup_root = Path(config.BACKUP_ROOT)
     backup_root.mkdir(parents=True, exist_ok=True)
+    write_restore_compose_marker()
 
     # 获取仓库路径
     repos_path = Path(config.GITEA_DATA_VOLUME) / config.GITEA_REPOS_PATH
@@ -1310,10 +1436,12 @@ if __name__ == "__main__":
   %(prog)s --cleanup                # 只清理旧报告
   %(prog)s --show-config            # 显示当前配置
   %(prog)s --validate-config        # 验证配置文件
+  %(prog)s --regenerate-restore-scripts  # 批量更新 restore.sh
 
 环境变量:
   GITEA_DOCKER_CONTAINER            # Docker 容器名称
   BACKUP_ROOT                       # 备份根目录
+  COMPOSE_PROJECT_DIR               # Docker Compose 项目目录（供 restore-via-docker.sh）
   BACKUP_ORGANIZATIONS              # 备份组织（逗号分隔）
   更多环境变量请参考文档
             """,
@@ -1327,6 +1455,16 @@ if __name__ == "__main__":
         parser.add_argument('--show-config', action='store_true', help='显示当前配置')
         parser.add_argument(
             '--validate-config', action='store_true', help='验证配置文件'
+        )
+        parser.add_argument(
+            '--regenerate-restore-scripts',
+            action='store_true',
+            help='批量重新生成所有仓库的 restore.sh 和 restore-via-docker.sh',
+        )
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='与 --regenerate-restore-scripts 联用，仅列出将更新的仓库',
         )
 
         args = parser.parse_args()
@@ -1378,6 +1516,18 @@ if __name__ == "__main__":
             logger.info("清理旧报告...")
             cleanup_old_reports()
             sys.exit(0)
+
+        # 批量更新恢复脚本
+        if args.regenerate_restore_scripts:
+            logger.info("批量更新恢复脚本...")
+            stats = regenerate_all_restore_scripts(dry_run=args.dry_run)
+            logger.info(
+                "完成: 更新 %s, 跳过 %s, 失败 %s",
+                stats['updated'],
+                stats['skipped'],
+                stats['failed'],
+            )
+            sys.exit(0 if stats['failed'] == 0 else 1)
 
         # 执行完整备份
         main()

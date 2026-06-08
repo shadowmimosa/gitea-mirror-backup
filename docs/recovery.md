@@ -2,6 +2,35 @@
 
 本文档展示如何使用自动生成的 `restore.sh` 恢复脚本。
 
+## Docker 部署
+
+backup 容器内路径为 `/shared/backup/...`。在宿主机**不要**直接执行 `restore.sh`，应通过容器运行：
+
+```bash
+# 推荐：restore 辅助服务
+docker compose run --rm -it restore \
+  /shared/backup/myorg/myrepo/restore.sh
+
+# 或使用 backup 服务并覆盖 entrypoint
+docker compose run --rm -it --entrypoint bash backup \
+  /shared/backup/myorg/myrepo/restore.sh
+
+# 或使用仓库目录下的包装脚本
+/shared/backup/myorg/myrepo/restore-via-docker.sh
+```
+
+> backup 镜像 `ENTRYPOINT` 为 `python gitea_mirror_backup.py`，若省略 `--entrypoint bash`，
+> `bash restore.sh` 会被当作 Python 脚本参数，无法进入恢复流程。
+
+批量更新所有仓库的恢复脚本：
+
+```bash
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+```
+
+## 直接部署
+
 ## 恢复脚本位置
 
 每个备份的仓库都会生成一个恢复脚本：
@@ -20,8 +49,11 @@
 
 ## 运行恢复脚本
 
+**Docker 部署** — 见上文 Docker 专节。
+
+**直接部署：**
+
 ```bash
-# 执行恢复脚本
 /backup/gitea-mirrors/myorg/myrepo/restore.sh
 ```
 

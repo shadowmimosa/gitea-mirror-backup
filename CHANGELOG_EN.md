@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.5] - 2026-06-08
+
+### Fixed
+
+- **Report list could not distinguish alert-retained reports**
+  - Added `is_protected` and `has_alerts` to `ReportInfo`, fixing Pydantic stripping fields so the UI showed all reports as normal
+  - Report list filter: All / Normal / Alert-retained
+
+- **restore.sh could not find snapshots when run on Docker host**
+  - Restore script uses `SCRIPT_DIR` relative paths for snapshot directories
+  - Clear error when run on host with correct `docker compose` command and diagnostics
+  - Empty snapshots prompt lists available monthly archives (git bundle)
+
+### Added
+
+- **Docker restore entrypoints**
+  - New `restore` helper service in `docker-compose.yml` (`entrypoint: /bin/bash`)
+  - Per-repo `restore-via-docker.sh` wrapper script
+  - New `--regenerate-restore-scripts` to batch-update existing restore scripts
+  - Backup writes `BACKUP_ROOT/.restore-compose-dir` for wrapper script compose project discovery
+
+### Changed
+
+- Updated Docker recovery instructions in README, `docs/docker.md`, and `docs/recovery.md`
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.4] - 2026-06-08
 
 ### Fixed

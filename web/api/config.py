@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # 应用基础配置
     APP_NAME: str = "Gitea Mirror Backup Web"
-    APP_VERSION: str = "1.5.0"
+    APP_VERSION: str = "1.4.5"
     DEBUG: bool = False
 
     # API 配置

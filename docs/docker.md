@@ -248,6 +248,31 @@ docker run --rm \
   gitea-mirror-backup:latest
 ```
 
+### 恢复仓库
+
+Docker 部署时，恢复脚本使用容器内路径（`/shared/backup/...`），**必须在 backup 容器内执行**：
+
+```bash
+# 推荐：restore 辅助服务
+docker compose run --rm -it restore \
+  /shared/backup/owner/repo/restore.sh
+
+# 或使用 backup 服务并覆盖 entrypoint
+docker compose run --rm -it --entrypoint bash backup \
+  /shared/backup/owner/repo/restore.sh
+```
+
+> 若省略 `--entrypoint bash`，`bash restore.sh` 会被当作 `gitea_mirror_backup.py` 的参数，只会显示 Python 帮助。
+
+批量更新已有恢复脚本：
+
+```bash
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+```
+
+详见 [恢复指南](./recovery.md)。
+
 ### 验证配置
 
 ```bash

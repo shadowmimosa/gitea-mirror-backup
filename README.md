@@ -278,7 +278,33 @@ Total:         ~62GB (vs 1500GB for full copies)
 
 ## 🔧 Recovery Operations
 
-Each repository has an auto-generated restore script:
+Each repository has auto-generated restore scripts.
+
+### Docker Deployment
+
+The backup image entrypoint runs the Python backup program. **Do not run `restore.sh` directly on the host** (paths inside the script are container paths like `/shared/backup/...`).
+
+```bash
+# Option 1: restore helper service (recommended)
+docker compose run --rm -it restore \
+  /shared/backup/org/repo/restore.sh
+
+# Option 2: backup service with entrypoint override
+docker compose run --rm -it --entrypoint bash backup \
+  /shared/backup/org/repo/restore.sh
+
+# Option 3: wrapper script in the repo directory
+/shared/backup/org/repo/restore-via-docker.sh
+```
+
+Regenerate all restore scripts:
+
+```bash
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+```
+
+### Direct Deployment
 
 ```bash
 /opt/backup/gitea-mirrors/org/repo/restore.sh
@@ -303,18 +329,16 @@ Each repository has an auto-generated restore script:
 
 ### Recovery Example
 
+**Docker:**
+
 ```bash
-# Run restore script
-./restore.sh
+docker compose run --rm -it restore /shared/backup/org/repo/restore.sh
+```
 
-# Select recovery mode
-Choose restore method [1]: 2
+**Direct deployment:**
 
-# Select snapshot
-Choose snapshot number [1]: 1
-
-# Enter new repo name
-Enter new repository name: my-repo-restored
+```bash
+cd /opt/backup/gitea-mirrors/org/repo && ./restore.sh
 ```
 
 ## 📊 Report Examples

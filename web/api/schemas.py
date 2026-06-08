@@ -227,7 +227,9 @@ class ReportInfo(BaseModel):
     filename: str
     created_at: datetime
     size: int
-    status: str  # success, failed
+    is_protected: bool = False
+    has_alerts: bool = False
+    status: str  # normal, alert
 
 
 class ReportDetail(ReportInfo):

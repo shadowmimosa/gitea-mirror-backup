@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.5] - 2026-06-08
+
+### Fixed
+
+- **报告列表无法区分异常保留**
+  - `ReportInfo` 补充 `is_protected`、`has_alerts` 字段，修复 Pydantic 剥离导致前端全部显示「正常」的问题
+  - 报告列表增加「全部 / 正常 / 异常保留」筛选
+
+- **Docker 部署下 restore.sh 在宿主机无法找到快照**
+  - 恢复脚本改用 `SCRIPT_DIR` 相对路径定位快照目录
+  - 宿主机误跑时输出正确的 `docker compose` 命令及诊断信息
+  - 快照为空时提示可用月度归档（git bundle）
+
+### Added
+
+- **Docker 恢复入口**
+  - `docker-compose.yml` 新增 `restore` 辅助服务（`entrypoint: /bin/bash`）
+  - 每个仓库生成 `restore-via-docker.sh` 包装脚本
+  - 新增 `--regenerate-restore-scripts` 批量更新已有恢复脚本
+  - 备份时写入 `BACKUP_ROOT/.restore-compose-dir` 供包装脚本定位 compose 项目
+
+### Changed
+
+- 更新 README、`docs/docker.md`、`docs/recovery.md` 中的 Docker 恢复说明
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.4] - 2026-06-08
 
 ### Fixed

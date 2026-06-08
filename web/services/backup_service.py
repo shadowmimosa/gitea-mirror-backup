@@ -388,19 +388,44 @@ class BackupService:
             return reports
 
         for report_file in reports_path.glob("report-*.md"):
-            # 检查是否受保护
             is_protected = report_file.with_suffix('.md.protected').exists()
+            has_alerts = is_protected or self._report_has_alerts(report_file)
 
             report_info = {
                 "filename": report_file.name,
                 "created_at": datetime.fromtimestamp(report_file.stat().st_mtime),
                 "size": report_file.stat().st_size,
                 "is_protected": is_protected,
-                "status": "protected" if is_protected else "success",
+                "has_alerts": has_alerts,
+                "status": "alert" if has_alerts else "normal",
             }
             reports.append(report_info)
 
         return sorted(reports, key=lambda x: x["created_at"], reverse=True)
+
+    @staticmethod
+    def _report_has_alerts(report_file: Path) -> bool:
+        """检测报告是否包含异常记录（轻量解析 Markdown 开头）"""
+        meta_file = report_file.with_suffix('.md.meta.json')
+        if meta_file.exists():
+            try:
+                import json
+
+                meta = json.loads(meta_file.read_text(encoding='utf-8'))
+                return bool(meta.get('has_alerts'))
+            except Exception:
+                pass
+
+        try:
+            head = report_file.read_text(encoding='utf-8')[:2048]
+        except Exception:
+            return False
+
+        markers = (
+            '## ⚠️ 需要关注的仓库',
+            '此报告已自动标记为永久保留',
+        )
+        return any(marker in head for marker in markers)
 
     def get_report_content(self, filename: str) -> Optional[str]:
         """

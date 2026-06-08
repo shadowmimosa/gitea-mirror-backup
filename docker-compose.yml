@@ -107,6 +107,36 @@ services:
         max-file: "3"
 
   # ============================================================
+  # 恢复辅助服务 - 可选
+  # 用途：在宿主机一键进入容器执行 restore.sh
+  # 使用：docker compose run --rm -it restore /shared/backup/owner/repo/restore.sh
+  # ============================================================
+  restore:
+    image: gitea-mirror-backup:latest
+    container_name: gitea-backup-restore
+    entrypoint: /bin/bash
+    stdin_open: true
+    tty: true
+    environment:
+      <<: *common-env
+    env_file:
+      - .env
+    volumes: *common-volumes
+    network_mode: bridge
+    profiles:
+      - restore
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
   # Web 管理界面 - 可选服务
   # 用途：提供 Web 界面查看备份历史、状态和手动触发备份
   # 启动：docker compose up -d web

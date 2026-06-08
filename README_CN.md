@@ -326,7 +326,33 @@ backup:
 
 ## 🔧 恢复操作
 
-每个仓库都有自动生成的恢复脚本：
+每个仓库都有自动生成的恢复脚本。
+
+### Docker 部署（推荐）
+
+backup 镜像的入口为 Python 备份程序，**请勿在宿主机直接运行 `restore.sh`**（脚本内路径为容器内 `/shared/backup/...`）。
+
+```bash
+# 方式 1：restore 辅助服务（推荐）
+docker compose run --rm -it restore \
+  /shared/backup/org/repo/restore.sh
+
+# 方式 2：backup 服务 + 覆盖 entrypoint
+docker compose run --rm -it --entrypoint bash backup \
+  /shared/backup/org/repo/restore.sh
+
+# 方式 3：仓库目录下的包装脚本（需先执行一次备份以生成）
+/shared/backup/org/repo/restore-via-docker.sh
+```
+
+批量更新已有恢复脚本：
+
+```bash
+docker compose run --rm --entrypoint python backup \
+  gitea_mirror_backup.py --regenerate-restore-scripts
+```
+
+### 直接部署
 
 ```bash
 /opt/backup/gitea-mirrors/org/repo/restore.sh
@@ -351,18 +377,17 @@ backup:
 
 ### 恢复示例
 
+**Docker 部署：**
+
 ```bash
-# 运行恢复脚本
+docker compose run --rm -it restore /shared/backup/org/repo/restore.sh
+```
+
+**直接部署：**
+
+```bash
+cd /opt/backup/gitea-mirrors/org/repo
 ./restore.sh
-
-# 选择恢复模式
-选择恢复方式 [1]: 2
-
-# 选择快照
-选择要恢复的快照编号 [1]: 1
-
-# 输入新仓库名
-输入新仓库名称: my-repo-restored
 ```
 
 ## 📊 报告示例
