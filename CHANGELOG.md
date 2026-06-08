@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.4] - 2026-06-08
+
+### Fixed
+
+- 🐛 **仪表板统计接口超时**
+  - 修复 `/api/dashboard/stats` 在生产环境因全盘扫描快照文件导致响应超过 10 秒、客户端主动中断（`net::ERR_ABORTED`）的问题
+  - 复用 `BackupService` 统计逻辑：通过 `.size_tracking` 汇总磁盘用量，目录遍历统计仓库与快照数量
+  - 移除对每个快照目录 `rglob("*")` 递归计算大小的低效实现
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.3] - 2026-01-29
 
 ### Fixed

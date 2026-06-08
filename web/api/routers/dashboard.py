@@ -3,31 +3,31 @@
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
-from pathlib import Path
 from datetime import datetime, timedelta
 
-from ..database import get_db
 from ..schemas import DashboardStats, DashboardTrend
 from ...utils.auth import get_current_user
 from ..models import User
 from ..config import settings
+from ...services.backup_service import BackupService
 
 router = APIRouter(prefix="/dashboard", tags=["仪表板"])
 
 
-def get_backup_stats() -> dict:
+def get_backup_service() -> BackupService:
+    """获取备份服务实例"""
+    return BackupService(
+        backup_base_path=settings.BACKUP_BASE_PATH,
+        config_path=settings.BACKUP_CONFIG_PATH,
+    )
+
+
+def get_backup_stats(backup_service: BackupService) -> dict:
     """
     获取备份统计信息
 
-    扫描实际的备份结构：
-    BACKUP_ROOT/
-      └── {owner}/
-          └── {repo_name}/
-              └── snapshots/
+    复用 BackupService，通过 .size_tracking 和目录遍历统计，避免对每个快照 rglob 扫描。
     """
-    backup_path = Path(settings.BACKUP_BASE_PATH)
-
     stats = {
         "total_repositories": 0,
         "total_snapshots": 0,
@@ -37,73 +37,32 @@ def get_backup_stats() -> dict:
         "failed_backups": 0,
     }
 
-    if not backup_path.exists():
+    repos = backup_service.get_repositories()
+    if not repos:
         return stats
 
-    latest_snapshot_time = None
-    total_repos = 0
-    total_snapshots = 0
-    total_size = 0
-    repos_with_alerts = 0
+    stats["total_repositories"] = len(repos)
+    stats["total_snapshots"] = sum(r.get("snapshot_count", 0) for r in repos)
+    stats["total_disk_usage"] = sum(r.get("disk_usage", 0) for r in repos)
+    stats["failed_backups"] = sum(1 for r in repos if r.get("status") == "warning")
 
-    # 遍历所有组织目录
-    for owner_dir in backup_path.iterdir():
-        if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
-            continue
+    last_times = [r["last_backup_time"] for r in repos if r.get("last_backup_time")]
+    if last_times:
+        stats["last_backup_time"] = max(last_times)
 
-        # 遍历组织下的所有仓库目录
-        for repo_dir in owner_dir.iterdir():
-            if not repo_dir.is_dir():
-                continue
-
-            # 检查是否有 snapshots 目录（标识这是一个备份仓库）
-            snapshots_dir = repo_dir / "snapshots"
-            if not snapshots_dir.exists():
-                continue
-
-            total_repos += 1
-
-            # 检查是否有异常告警
-            if (repo_dir / ".alerts").exists():
-                repos_with_alerts += 1
-
-            # 统计快照
-            for snapshot_dir in snapshots_dir.iterdir():
-                if not snapshot_dir.is_dir():
-                    continue
-
-                total_snapshots += 1
-
-                # 获取快照时间
-                snapshot_time = datetime.fromtimestamp(snapshot_dir.stat().st_mtime)
-                if latest_snapshot_time is None or snapshot_time > latest_snapshot_time:
-                    latest_snapshot_time = snapshot_time
-
-                # 计算快照大小（这可能很慢，可以考虑只统计最近的）
-                try:
-                    size = sum(
-                        f.stat().st_size for f in snapshot_dir.rglob("*") if f.is_file()
-                    )
-                    total_size += size
-                except Exception:
-                    pass
-
-    stats["total_repositories"] = total_repos
-    stats["total_snapshots"] = total_snapshots
-    stats["total_disk_usage"] = total_size
-    stats["last_backup_time"] = latest_snapshot_time
-    stats["failed_backups"] = repos_with_alerts
-
-    # 计算成功率
-    if total_repos > 0:
-        stats["success_rate"] = ((total_repos - repos_with_alerts) / total_repos) * 100
+    if stats["total_repositories"] > 0:
+        stats["success_rate"] = (
+            (stats["total_repositories"] - stats["failed_backups"])
+            / stats["total_repositories"]
+        ) * 100
 
     return stats
 
 
 @router.get("/stats", response_model=DashboardStats, summary="获取仪表板统计数据")
 async def get_stats(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    backup_service: BackupService = Depends(get_backup_service),
 ):
     """
     获取仪表板统计数据
@@ -116,7 +75,7 @@ async def get_stats(
     - 成功率
     - 失败备份数
     """
-    stats = get_backup_stats()
+    stats = get_backup_stats(backup_service)
     return DashboardStats(**stats)
 
 

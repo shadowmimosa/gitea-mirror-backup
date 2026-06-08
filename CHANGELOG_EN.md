@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.4] - 2026-06-08
+
+### Fixed
+
+- 🐛 **Dashboard stats API timeout**
+  - Fixed `/api/dashboard/stats` exceeding 10 seconds in production due to recursively scanning every file in each snapshot, causing client abort (`net::ERR_ABORTED`)
+  - Reuse `BackupService` stats logic: aggregate disk usage via `.size_tracking`, count repos and snapshots via directory traversal
+  - Removed inefficient per-snapshot `rglob("*")` size calculation
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.3] - 2026-01-29
 
 ### Fixed
