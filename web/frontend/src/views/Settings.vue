@@ -40,7 +40,7 @@
           <n-tab-pane v-if="authStore.isAdmin" name="backup-scope" tab="备份范围">
             <n-space vertical>
               <n-alert type="info" :show-icon="false">
-                组织列表为空时备份全部组织；修改后于下次全量备份任务生效。单仓「立即备份」不受此限制。
+                组织列表为空时备份全部组织。设置保存到 Web 数据目录（非只读 config.yaml），下次全量备份生效；单仓「立即备份」不受组织限制。
               </n-alert>
               <n-alert
                 v-for="(warning, index) in backupScope.warnings"

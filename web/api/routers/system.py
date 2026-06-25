@@ -23,7 +23,7 @@ router = APIRouter(prefix="/system", tags=["系统信息"])
 
 
 def get_config_service() -> ConfigService:
-    return ConfigService(settings.BACKUP_CONFIG_PATH)
+    return ConfigService(settings.BACKUP_CONFIG_PATH, settings.WEB_DATA_DIR)
 
 
 @router.get("/info", summary="获取系统信息")
@@ -90,7 +90,7 @@ async def update_backup_scope(
     current_admin: User = Depends(get_current_admin_user),
     config_service: ConfigService = Depends(get_config_service),
 ):
-    """写入 config.yaml，下次全量备份任务生效"""
+    """写入 data 目录覆盖文件并生成有效配置，下次全量备份生效"""
     config_path = Path(settings.BACKUP_CONFIG_PATH)
     if not config_path.exists():
         raise HTTPException(

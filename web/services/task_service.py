@@ -208,7 +208,7 @@ class TaskService:
     def _execute_backup(
         self, task_run_id: int, log_file: Path, repository: Optional[str]
     ):
-        config_path = Path(settings.BACKUP_CONFIG_PATH)
+        config_path = Path(settings.get_active_backup_config_path())
 
         with open(log_file, "w", encoding="utf-8") as log_fp:
             if repository:

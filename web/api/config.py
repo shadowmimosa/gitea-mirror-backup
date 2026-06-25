@@ -111,10 +111,34 @@ class Settings(BaseSettings):
             return env_dir
         return str(Path(self.WEB_DATA_DIR) / "task-logs")
 
+    def get_active_backup_config_path(self) -> str:
+        """备份任务使用的配置：合并覆盖项后的有效配置优先"""
+        effective = Path(self.EFFECTIVE_BACKUP_CONFIG_PATH)
+        if effective.exists():
+            return str(effective)
+        return self.BACKUP_CONFIG_PATH
+
+    @property
+    def BACKUP_SCOPE_OVERRIDE_PATH(self) -> str:
+        return str(Path(self.WEB_DATA_DIR) / "backup-scope.override.yaml")
+
+    @property
+    def EFFECTIVE_BACKUP_CONFIG_PATH(self) -> str:
+        return str(Path(self.WEB_DATA_DIR) / "backup-config.effective.yaml")
+
     def reload_config_loader(self) -> None:
-        """重新加载备份配置文件"""
+        """重新加载备份配置文件（含 Web 覆盖合并结果）"""
         try:
-            self._config_loader = ConfigLoader(self.BACKUP_CONFIG_PATH)
+            override = Path(self.BACKUP_SCOPE_OVERRIDE_PATH)
+            if override.exists():
+                from src.config_merge import write_merged_config
+
+                write_merged_config(
+                    Path(self.BACKUP_CONFIG_PATH),
+                    override,
+                    Path(self.EFFECTIVE_BACKUP_CONFIG_PATH),
+                )
+            self._config_loader = ConfigLoader(self.get_active_backup_config_path())
         except Exception as e:
             print(f"警告: 重新加载配置文件失败: {e}")
             self._config_loader = None

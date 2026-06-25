@@ -9,13 +9,15 @@ import yaml
 from src.config_loader import ConfigLoader
 from src.snapshot_utils import protection_marker_path
 from web.services.backup_service import BackupService
+from web.services.config_service import ConfigService
 
 
 class TestBackupScopeConfig(unittest.TestCase):
-    def test_update_backup_scope_writes_yaml(self):
+    def test_update_backup_scope_writes_override_file(self):
         with tempfile.TemporaryDirectory() as tmp:
-            config_path = Path(tmp) / "config.yaml"
-            config_path.write_text(
+            base_config = Path(tmp) / "config.yaml"
+            web_data = Path(tmp) / "data"
+            base_config.write_text(
                 yaml.dump(
                     {
                         "gitea": {"data_volume": tmp, "repos_path": "repos"},
@@ -29,14 +31,22 @@ class TestBackupScopeConfig(unittest.TestCase):
             repos = Path(tmp) / "repos"
             repos.mkdir()
             (repos / "OrgA").mkdir()
-            (repos / "OrgB").mkdir()
 
-            loader = ConfigLoader(str(config_path))
-            loader.update_backup_scope(["OrgA"], True)
+            service = ConfigService(str(base_config), str(web_data))
+            service.update_backup_scope(["OrgA"], True)
 
-            reloaded = ConfigLoader(str(config_path))
-            self.assertEqual(reloaded.get("backup.organizations"), ["OrgA"])
-            self.assertTrue(reloaded.get("backup.check_mirror_only"))
+            override = web_data / "backup-scope.override.yaml"
+            effective = web_data / "backup-config.effective.yaml"
+            self.assertTrue(override.exists())
+            self.assertTrue(effective.exists())
+            override_data = yaml.safe_load(override.read_text(encoding="utf-8"))
+            self.assertEqual(override_data["backup"]["organizations"], ["OrgA"])
+
+            reloaded = ConfigService(str(base_config), str(web_data))
+            scope = reloaded.get_backup_scope()
+            self.assertEqual(scope["organizations"], ["OrgA"])
+            self.assertTrue(scope["check_mirror_only"])
+            self.assertEqual(scope["effective_organizations"], ["OrgA"])
 
     def test_list_gitea_organizations(self):
         with tempfile.TemporaryDirectory() as tmp:
