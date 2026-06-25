@@ -196,7 +196,22 @@ const baseColumns = computed(() => {
   }
   cols.push(
     { title: '快照 ID', key: 'id', ellipsis: { tooltip: true } },
-    { title: '仓库', key: 'repository' }
+    {
+      title: '仓库',
+      key: 'repository',
+      render: (row: any) => {
+        return h(
+          NButton,
+          {
+            text: true,
+            type: 'primary',
+            tag: 'a',
+            onClick: () => router.push(`/repositories/${encodeURIComponent(row.repository)}`)
+          },
+          { default: () => row.repository }
+        )
+      }
+    }
   )
   if (includeSize.value) {
     cols.push({

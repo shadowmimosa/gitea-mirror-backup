@@ -33,6 +33,8 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
+BACKUP_SCRIPT_VERSION = "1.3.1"
+
 
 # ============ 日志配置 ============
 def setup_logging(config_instance: Config):
@@ -942,57 +944,162 @@ def regenerate_all_restore_scripts(dry_run: bool = False) -> Dict[str, int]:
 
 
 # ============ 报告生成 ============
-def send_backup_notification(processed_count: int, skipped_count: int):
+def _normalize_backup_repo_name(full_name: str) -> str:
+    """规范化为 owner/repo（备份目录名，不含 .git）"""
+    parts = full_name.strip().split('/')
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"无效的仓库名: {full_name}，格式应为 owner/repo")
+    owner, repo = parts[0], parts[1]
+    if repo.endswith('.git'):
+        repo = repo[:-4]
+    return f"{owner}/{repo}"
+
+
+def _get_backup_repo_dir(backup_root: Path, repo_name: str) -> Optional[Path]:
+    owner, repo = repo_name.split('/', 1)
+    repo_dir = backup_root / owner / repo
+    return repo_dir if repo_dir.is_dir() else None
+
+
+def _repo_has_alerts(repo_dir: Path) -> bool:
+    alert_file = repo_dir / ".alerts"
+    return alert_file.exists() and alert_file.stat().st_size > 0
+
+
+def _collect_repo_report_detail(
+    backup_root: Path, org_name: str, repo_dir: Path
+) -> dict:
+    """收集单个仓库的报告统计"""
+    repo_name = f"{org_name}/{repo_dir.name}"
+
+    snapshot_count = 0
+    protected_snapshot_count = 0
+    latest_snapshot = "无"
+    snapshot_dir = repo_dir / "snapshots"
+    if snapshot_dir.exists():
+        snapshots = sorted(
+            snapshot_dir.iterdir(),
+            key=lambda x: x.stat().st_mtime,
+            reverse=True,
+        )
+        all_snapshots = [s for s in snapshots if s.is_dir()]
+        snapshot_count = len(all_snapshots)
+        protected_snapshot_count = len(
+            [s for s in all_snapshots if (s / ".protected").exists()]
+        )
+        if snapshots:
+            latest_snapshot = snapshots[0].name
+
+    archive_count = 0
+    archive_dir = repo_dir / "archives"
+    if archive_dir.exists():
+        archive_count = len(list(archive_dir.glob("*.bundle")))
+
+    dir_size = get_directory_size(repo_dir)
+
+    commit_count = "N/A"
+    commit_change = None
+    commit_tracking_file = repo_dir / ".commit_tracking"
+    if commit_tracking_file.exists():
+        try:
+            commit_count = commit_tracking_file.read_text().strip()
+        except Exception:
+            pass
+
+    alert_file = repo_dir / ".alerts"
+    if alert_file.exists():
+        try:
+            alert_content = alert_file.read_text()
+            if "提交数异常减少" in alert_content:
+                for line in alert_content.strip().split('\n'):
+                    if "提交数异常减少" in line:
+                        commit_change = line
+                        break
+        except Exception:
+            pass
+
+    return {
+        'name': repo_name,
+        'snapshot_count': snapshot_count,
+        'protected_snapshots': protected_snapshot_count,
+        'latest_snapshot': latest_snapshot,
+        'archive_count': archive_count,
+        'size_kb': dir_size,
+        'commits': commit_count,
+        'commit_change': commit_change,
+    }
+
+
+def send_backup_notification(
+    processed_count: int,
+    skipped_count: int,
+    target_repo: Optional[str] = None,
+):
     """发送备份通知"""
     if not notifier:
         return
 
     backup_root = Path(config.BACKUP_ROOT)
-    need_review_file = backup_root / ".need_review"
-    has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
+    single_repo = _normalize_backup_repo_name(target_repo) if target_repo else None
 
-    # 收集统计信息
+    if single_repo:
+        has_alerts = False
+        alert_repos = []
+        repo_dir = _get_backup_repo_dir(backup_root, single_repo)
+        if repo_dir and _repo_has_alerts(repo_dir):
+            has_alerts = True
+            alert_repos = [single_repo]
+    else:
+        need_review_file = backup_root / ".need_review"
+        has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
+        alert_repos = []
+
     total_repos = 0
     total_commits = 0
     total_snapshots = 0
     total_size_kb = 0
-    alert_repos = []
 
-    for org_dir in backup_root.iterdir():
-        if not org_dir.is_dir() or org_dir.name.startswith('.'):
-            continue
-        for repo_dir in org_dir.iterdir():
-            if not repo_dir.is_dir():
+    if single_repo:
+        repo_dir = _get_backup_repo_dir(backup_root, single_repo)
+        if repo_dir:
+            total_repos = 1
+            detail = _collect_repo_report_detail(
+                backup_root, single_repo.split('/', 1)[0], repo_dir
+            )
+            total_snapshots = detail['snapshot_count']
+            if str(detail['commits']).isdigit():
+                total_commits = int(detail['commits'])
+            total_size_kb = detail['size_kb']
+            if has_alerts:
+                alert_repos = [single_repo]
+    else:
+        for org_dir in backup_root.iterdir():
+            if not org_dir.is_dir() or org_dir.name.startswith('.'):
                 continue
-            total_repos += 1
+            for repo_dir in org_dir.iterdir():
+                if not repo_dir.is_dir():
+                    continue
+                total_repos += 1
 
-            # 统计快照
-            snapshot_dir = repo_dir / "snapshots"
-            if snapshot_dir.exists():
-                total_snapshots += len(
-                    [s for s in snapshot_dir.iterdir() if s.is_dir()]
-                )
+                snapshot_dir = repo_dir / "snapshots"
+                if snapshot_dir.exists():
+                    total_snapshots += len(
+                        [s for s in snapshot_dir.iterdir() if s.is_dir()]
+                    )
 
-            # 统计提交数
-            commit_file = repo_dir / ".commit_tracking"
-            if commit_file.exists():
-                try:
-                    commits = int(commit_file.read_text().strip())
-                    total_commits += commits
-                except Exception:
-                    pass
+                commit_file = repo_dir / ".commit_tracking"
+                if commit_file.exists():
+                    try:
+                        commits = int(commit_file.read_text().strip())
+                        total_commits += commits
+                    except Exception:
+                        pass
 
-            # 统计大小
-            dir_size = get_directory_size(repo_dir)
-            total_size_kb += dir_size
+                total_size_kb += get_directory_size(repo_dir)
 
-            # 检查异常
-            alert_file = repo_dir / ".alerts"
-            if alert_file.exists():
-                repo_name = f"{org_dir.name}/{repo_dir.name}"
-                alert_repos.append(repo_name)
+                if _repo_has_alerts(repo_dir):
+                    alert_repos.append(f"{org_dir.name}/{repo_dir.name}")
 
-    # 构建报告数据
     report_data = {
         'total_repos': total_repos,
         'total_commits': total_commits,
@@ -1001,7 +1108,8 @@ def send_backup_notification(processed_count: int, skipped_count: int):
         'skipped_count': skipped_count,
         'has_alerts': has_alerts,
         'alert_repos': alert_repos,
-        'total_size_mb': total_size_kb // 1024,  # 转换为 MB
+        'total_size_mb': total_size_kb // 1024,
+        'target_repo': single_repo,
     }
 
     # 发送通知
@@ -1035,25 +1143,34 @@ def cleanup_old_reports():
             logger.warning(f"删除旧报告失败 {report_file}: {e}")
 
     if deleted_count > 0:
-        logger.info(f"清理了 {deleted_count} 个旧报告")
+        logger.info(f"清理了 {deleted_count} 个过期报告")
     if protected_count > 0:
-        logger.info(f"跳过受保护报告: {protected_count} 个")
+        logger.info(
+            f"报告目录中保留 {protected_count} 个受保护的历史报告（全局异常记录，与单仓备份无关）"
+        )
 
 
-def generate_report():
-    """生成备份报告"""
-    logger.info("生成备份报告...")
+def generate_report(target_repo: Optional[str] = None):
+    """生成备份报告。target_repo 指定时仅统计该仓库，不扫描全库。"""
+    single_repo = None
+    if target_repo:
+        single_repo = _normalize_backup_repo_name(target_repo)
+        logger.info(f"生成单仓备份报告: {single_repo}")
+    else:
+        logger.info("生成备份报告...")
 
     backup_root = Path(config.BACKUP_ROOT)
     report_dir = Path(config.REPORT_DIR)
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成带时间戳的报告文件
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    report_file = report_dir / f"report-{timestamp}.md"
+    if single_repo:
+        safe_name = single_repo.replace('/', '-')
+        report_file = report_dir / f"report-{safe_name}-{timestamp}.md"
+    else:
+        report_file = report_dir / f"report-{timestamp}.md"
     latest_report = Path(config.LATEST_REPORT)
 
-    # 统计信息
     total_repos = 0
     total_snapshots = 0
     total_archives = 0
@@ -1061,106 +1178,62 @@ def generate_report():
     total_commits = 0
     repo_details = []
 
-    # 遍历所有仓库
-    for org_dir in backup_root.iterdir():
-        if not org_dir.is_dir() or org_dir.name.startswith('.'):
-            continue
-
-        for repo_dir in org_dir.iterdir():
-            if not repo_dir.is_dir():
+    if single_repo:
+        repo_dir = _get_backup_repo_dir(backup_root, single_repo)
+        if not repo_dir:
+            logger.warning(f"备份目录不存在，跳过报告: {single_repo}")
+            return
+        org_name = single_repo.split('/', 1)[0]
+        detail = _collect_repo_report_detail(backup_root, org_name, repo_dir)
+        repo_details.append(detail)
+        total_repos = 1
+        total_snapshots = detail['snapshot_count']
+        total_archives = detail['archive_count']
+        total_size = detail['size_kb']
+        if str(detail['commits']).isdigit():
+            total_commits = int(detail['commits'])
+    else:
+        for org_dir in backup_root.iterdir():
+            if not org_dir.is_dir() or org_dir.name.startswith('.'):
                 continue
 
-            repo_name = f"{org_dir.name}/{repo_dir.name}"
-            total_repos += 1
+            for repo_dir in org_dir.iterdir():
+                if not repo_dir.is_dir():
+                    continue
 
-            # 统计快照
-            snapshot_count = 0
-            protected_snapshot_count = 0
-            latest_snapshot = "无"
-            snapshot_dir = repo_dir / "snapshots"
-            if snapshot_dir.exists():
-                snapshots = sorted(
-                    snapshot_dir.iterdir(),
-                    key=lambda x: x.stat().st_mtime,
-                    reverse=True,
+                detail = _collect_repo_report_detail(
+                    backup_root, org_dir.name, repo_dir
                 )
-                all_snapshots = [s for s in snapshots if s.is_dir()]
-                snapshot_count = len(all_snapshots)
-                # 统计受保护的快照
-                protected_snapshot_count = len(
-                    [s for s in all_snapshots if (s / ".protected").exists()]
-                )
-                if snapshots:
-                    latest_snapshot = snapshots[0].name
-                total_snapshots += snapshot_count
+                repo_details.append(detail)
+                total_repos += 1
+                total_snapshots += detail['snapshot_count']
+                total_archives += detail['archive_count']
+                total_size += detail['size_kb']
+                if str(detail['commits']).isdigit():
+                    total_commits += int(detail['commits'])
 
-            # 统计归档
-            archive_count = 0
-            archive_dir = repo_dir / "archives"
-            if archive_dir.exists():
-                archive_count = len(list(archive_dir.glob("*.bundle")))
-                total_archives += archive_count
+    if single_repo:
+        repo_dir = _get_backup_repo_dir(backup_root, single_repo)
+        has_alerts = repo_dir and _repo_has_alerts(repo_dir)
+        alert_repos = [single_repo] if has_alerts else []
+    else:
+        need_review_file = backup_root / ".need_review"
+        has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
+        alert_repos = []
+        if has_alerts:
+            alert_repos = [
+                line.strip()
+                for line in need_review_file.read_text(encoding='utf-8').splitlines()
+                if line.strip()
+            ]
 
-            # 计算大小
-            dir_size = get_directory_size(repo_dir)
-            total_size += dir_size
-
-            # 读取提交数和历史变化
-            commit_count = "N/A"
-            commit_change = None
-            commit_tracking_file = repo_dir / ".commit_tracking"
-            if commit_tracking_file.exists():
-                try:
-                    commit_count = commit_tracking_file.read_text().strip()
-                    if commit_count.isdigit():
-                        total_commits += int(commit_count)
-                except Exception:
-                    pass
-
-            # 检查是否有提交数变化告警
-            alert_file = repo_dir / ".alerts"
-            if alert_file.exists():
-                try:
-                    alert_content = alert_file.read_text()
-                    # 查找最后一次提交数变化记录
-                    if "提交数异常减少" in alert_content:
-                        lines = alert_content.strip().split('\n')
-                        for line in lines:
-                            if "提交数异常减少" in line:
-                                commit_change = line
-                                break
-                except Exception:
-                    pass
-
-            repo_details.append(
-                {
-                    'name': repo_name,
-                    'snapshot_count': snapshot_count,
-                    'protected_snapshots': protected_snapshot_count,
-                    'latest_snapshot': latest_snapshot,
-                    'archive_count': archive_count,
-                    'size_kb': dir_size,
-                    'commits': commit_count,
-                    'commit_change': commit_change,
-                }
-            )
-
-    # 检查是否有异常
-    need_review_file = backup_root / ".need_review"
-    has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
-    alert_repos = []
-    if has_alerts:
-        alert_repos = [
-            line.strip()
-            for line in need_review_file.read_text(encoding='utf-8').splitlines()
-            if line.strip()
-        ]
-
-    # 生成报告
     with open(report_file, 'w', encoding='utf-8') as f:
-        f.write("# Gitea 镜像仓库备份报告\n\n")
+        if single_repo:
+            f.write("# Gitea 单仓备份报告\n\n")
+            f.write(f"**备份仓库**: {single_repo}\n\n")
+        else:
+            f.write("# Gitea 镜像仓库备份报告\n\n")
 
-        # 如果有异常，在标题下方标注
         if has_alerts:
             f.write("> 🔒 **此报告已自动标记为永久保留**（检测到仓库异常）\n\n")
 
@@ -1168,15 +1241,16 @@ def generate_report():
         f.write(f"**生成时间**: {current_time}\n")
         f.write(f"**报告文件**: {report_file.name}\n\n")
 
-        # 总体统计
         f.write("## 📊 总体统计\n\n")
-        f.write(f"- **备份仓库数**: {total_repos}\n")
+        if single_repo:
+            f.write(f"- **目标仓库**: {single_repo}\n")
+        else:
+            f.write(f"- **备份仓库数**: {total_repos}\n")
         f.write(f"- **总提交数**: {total_commits:,} commits\n")
         f.write(f"- **快照总数**: {total_snapshots}\n")
         f.write(f"- **归档总数**: {total_archives}\n")
         f.write(f"- **占用空间**: {total_size // 1024} MB\n\n")
 
-        # 异常报告
         if has_alerts:
             f.write("## ⚠️ 需要关注的仓库\n\n")
             f.write(
@@ -1184,8 +1258,7 @@ def generate_report():
             )
 
             reviewed_repos = set()
-            for line in (backup_root / ".need_review").read_text().splitlines():
-                repo_name = line.strip()
+            for repo_name in alert_repos:
                 if not repo_name or repo_name in reviewed_repos:
                     continue
                 reviewed_repos.add(repo_name)
@@ -1194,12 +1267,10 @@ def generate_report():
                 if alert_file.exists():
                     f.write(f"### {repo_name}\n")
                     f.write("```\n")
-                    # 只显示最后20行
                     alerts = alert_file.read_text().splitlines()
                     f.write('\n'.join(alerts[-20:]))
                     f.write("\n```\n\n")
 
-                    # 显示当前状态
                     commit_tracking_file = backup_root / repo_name / ".commit_tracking"
                     size_tracking_file = backup_root / repo_name / ".size_tracking"
 
@@ -1221,7 +1292,6 @@ def generate_report():
                     if current_info:
                         f.write(f"**当前状态**: {' | '.join(current_info)}\n\n")
 
-                    # 受保护的快照
                     snapshot_dir = backup_root / repo_name / "snapshots"
                     if snapshot_dir.exists():
                         snapshots = sorted(
@@ -1232,7 +1302,6 @@ def generate_report():
                         latest = snapshots[0].name if snapshots else "无"
                         f.write(f"**最新快照**: {latest}\n")
 
-                        # 列出受保护的快照
                         protected_snapshots = [
                             s.name
                             for s in snapshots
@@ -1242,7 +1311,7 @@ def generate_report():
                             f.write(
                                 f"**🔒 受保护快照** ({len(protected_snapshots)}个，永久保留):\n"
                             )
-                            for ps in protected_snapshots[:5]:  # 只显示前5个
+                            for ps in protected_snapshots[:5]:
                                 f.write(f"  - {ps}\n")
                             if len(protected_snapshots) > 5:
                                 f.write(
@@ -1256,11 +1325,15 @@ def generate_report():
                     f.write("```\n\n")
                     f.write("---\n\n")
 
-            # 清空待审核列表
-            (backup_root / ".need_review").unlink()
+            if not single_repo:
+                (backup_root / ".need_review").unlink()
         else:
-            f.write("## ✅ 全部正常\n\n")
-            f.write("本周期内所有仓库均未检测到异常。\n\n")
+            if single_repo:
+                f.write("## ✅ 仓库状态正常\n\n")
+                f.write("本仓库未检测到异常。\n\n")
+            else:
+                f.write("## ✅ 全部正常\n\n")
+                f.write("本周期内所有仓库均未检测到异常。\n\n")
 
         # 提交数变化统计
         repos_with_changes = [r for r in repo_details if r['commit_change']]
@@ -1337,24 +1410,22 @@ def generate_report():
 
     meta_file = report_file.with_suffix('.md.meta.json')
     try:
+        meta = {
+            "has_alerts": has_alerts,
+            "generated_at": datetime.now().isoformat(),
+            "alert_repos": alert_repos,
+            "scope": "single" if single_repo else "full",
+        }
+        if single_repo:
+            meta["repository"] = single_repo
         meta_file.write_text(
-            json.dumps(
-                {
-                    "has_alerts": has_alerts,
-                    "generated_at": datetime.now().isoformat(),
-                    "alert_repos": alert_repos,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
+            json.dumps(meta, ensure_ascii=False, indent=2),
             encoding='utf-8',
         )
     except Exception as e:
         logger.warning(f"写入报告元数据失败: {e}")
 
-    # 检查是否需要保护此报告（已经在前面检查过了）
     if has_alerts:
-        # 有需要关注的仓库，保护此报告
         protect_file = report_file.with_suffix('.md.protected')
         try:
             with open(protect_file, 'w') as f:
@@ -1368,18 +1439,19 @@ def generate_report():
         except Exception as e:
             logger.warning(f"标记报告保护失败: {e}")
 
-    # 创建或更新到最新报告的软链接（使用相对路径）
-    try:
-        if latest_report.exists() or latest_report.is_symlink():
-            latest_report.unlink()
-        # 使用相对路径创建软链接
-        relative_path = report_file.relative_to(latest_report.parent)
-        latest_report.symlink_to(relative_path)
-        logger.info(f"✓ 报告生成: {report_file}")
-        logger.info(f"✓ 最新报告: {latest_report}")
-    except Exception as e:
-        logger.warning(f"创建软链接失败: {e}")
-        logger.info(f"✓ 报告生成: {report_file}")
+    if single_repo:
+        logger.info(f"✓ 单仓报告生成: {report_file}")
+    else:
+        try:
+            if latest_report.exists() or latest_report.is_symlink():
+                latest_report.unlink()
+            relative_path = report_file.relative_to(latest_report.parent)
+            latest_report.symlink_to(relative_path)
+            logger.info(f"✓ 报告生成: {report_file}")
+            logger.info(f"✓ 最新报告: {latest_report}")
+        except Exception as e:
+            logger.warning(f"创建软链接失败: {e}")
+            logger.info(f"✓ 报告生成: {report_file}")
 
 
 def resolve_repo_path(full_name: str, repos_path: Path) -> Path:
@@ -1421,6 +1493,11 @@ def main(target_repo: Optional[str] = None):
     """主函数"""
     logger.info("=" * 50)
     logger.info("Gitea Docker 镜像备份任务开始")
+    logger.info(f"备份脚本版本: {BACKUP_SCRIPT_VERSION}")
+    if target_repo:
+        logger.info(f"运行模式: 单仓备份 ({target_repo})")
+    else:
+        logger.info("运行模式: 全量备份")
     logger.info("=" * 50)
 
     # 检查 Docker
@@ -1441,10 +1518,10 @@ def main(target_repo: Optional[str] = None):
 
     logger.info(f"仓库目录: {repos_path}")
 
-    # 列出目录内容以便调试
-    logger.info("扫描组织目录...")
-    org_dirs = [d for d in repos_path.iterdir() if d.is_dir()]
-    logger.info(f"找到 {len(org_dirs)} 个组织目录: {[d.name for d in org_dirs]}")
+    if not target_repo:
+        logger.info("扫描组织目录...")
+        org_dirs = [d for d in repos_path.iterdir() if d.is_dir()]
+        logger.info(f"找到 {len(org_dirs)} 个组织目录: {[d.name for d in org_dirs]}")
 
     # 处理仓库
     processed_count = 0
@@ -1492,16 +1569,19 @@ def main(target_repo: Optional[str] = None):
     logger.info("=" * 50)
     logger.info(f"处理了 {processed_count} 个仓库")
 
-    # 每次都生成报告
-    generate_report()
+    # 每次都生成报告（单仓模式仅统计该仓库）
+    generate_report(target_repo=target_repo)
 
-    # 清理旧报告
-    cleanup_old_reports()
+    # 全量备份才清理过期报告；单仓备份跳过，避免扫描整个报告目录
+    if not target_repo:
+        cleanup_old_reports()
 
     # 发送通知
     if notifier:
         try:
-            send_backup_notification(processed_count, skipped_count)
+            send_backup_notification(
+                processed_count, skipped_count, target_repo=target_repo
+            )
         except Exception as e:
             logger.error(f"发送通知失败: {e}")
 
@@ -1602,7 +1682,7 @@ if __name__ == "__main__":
         # 只生成报告
         if args.report:
             logger.info("手动生成报告...")
-            generate_report()
+            generate_report(target_repo=args.repo)
             sys.exit(0)
 
         # 只清理旧报告

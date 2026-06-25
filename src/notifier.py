@@ -103,15 +103,21 @@ class NotificationManager:
             report_data: 报告数据
         """
         has_alerts = report_data.get('has_alerts', False)
+        target_repo = report_data.get('target_repo')
 
         if has_alerts:
             level = "warning"
-            title = "⚠️ Gitea 备份报告 - 检测到异常"
+            if target_repo:
+                title = f"⚠️ Gitea 单仓备份 - {target_repo} 检测到异常"
+            else:
+                title = "⚠️ Gitea 备份报告 - 检测到异常"
         else:
             level = "info"
-            title = "✅ Gitea 备份报告 - 全部正常"
+            if target_repo:
+                title = f"✅ Gitea 单仓备份 - {target_repo} 完成"
+            else:
+                title = "✅ Gitea 备份报告 - 全部正常"
 
-        # 构建消息
         message = self._build_report_message(report_data)
 
         self.send_notification(title, message, level, report_data)
@@ -119,9 +125,11 @@ class NotificationManager:
     def _build_report_message(self, report_data: Dict) -> str:
         """构建报告消息"""
         lines = []
+        target_repo = report_data.get('target_repo')
 
-        # 基本信息
         lines.append(f"备份时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        if target_repo:
+            lines.append(f"备份模式: 单仓 ({target_repo})")
         lines.append(f"备份仓库数: {report_data.get('total_repos', 0)}")
         lines.append(f"总提交数: {report_data.get('total_commits', 0):,}")
         lines.append(f"快照总数: {report_data.get('total_snapshots', 0)}")
