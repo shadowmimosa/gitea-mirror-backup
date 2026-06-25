@@ -2,14 +2,18 @@
 报告管理路由
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 
-from ..schemas import ReportInfo, ReportDetail
-from ...utils.auth import get_current_user
+from ..schemas import ReportInfo, ReportDetail, MessageResponse
+from ...utils.auth import get_current_user, get_current_admin_user
 from ..models import User
 from ..config import settings
 from ...services.backup_service import BackupService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["报告管理"])
 
@@ -69,3 +73,45 @@ async def get_report(
         )
 
     return ReportDetail(**report, content=content)
+
+
+@router.delete("/{filename}", response_model=MessageResponse, summary="删除报告")
+async def delete_report(
+    filename: str,
+    force: bool = False,
+    current_user: User = Depends(get_current_admin_user),
+    backup_service: BackupService = Depends(get_backup_service),
+):
+    """
+    删除指定备份报告（仅管理员）
+
+    - **filename**: 报告文件名
+    - **force**: 强制删除受保护报告
+    """
+    reports = backup_service.get_reports()
+    report = next((r for r in reports if r["filename"] == filename), None)
+
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"报告 {filename} 不存在",
+        )
+
+    is_protected = report.get("is_protected", False)
+    if is_protected and not force:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"报告 {filename} 已被保护，无法删除（可使用 force=true 强制删除）",
+        )
+
+    success = backup_service.delete_report(filename, force=force)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除报告失败",
+        )
+
+    if is_protected and force:
+        logger.warning("管理员 %s 强制删除受保护报告: %s", current_user.username, filename)
+
+    return MessageResponse(message=f"报告 {filename} 已删除")

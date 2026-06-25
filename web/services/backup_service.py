@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
 import subprocess
+import shutil
 
-from src.snapshot_utils import is_snapshot_protected
+from src.config_loader import ConfigLoader
+from src.snapshot_utils import is_snapshot_protected, clear_protection_markers
 
 
 class BackupService:
@@ -30,6 +32,36 @@ class BackupService:
         """
         self.backup_base_path = Path(backup_base_path)
         self.config_path = Path(config_path)
+        self._config_loader: Optional[ConfigLoader] = None
+
+    def _get_config_loader(self) -> ConfigLoader:
+        if self._config_loader is None:
+            self._config_loader = ConfigLoader(str(self.config_path))
+        return self._config_loader
+
+    def _gitea_source_repo_path(self, owner: str, repo_name: str) -> Path:
+        loader = self._get_config_loader()
+        gitea_volume = Path(loader.get('gitea.data_volume', '/shared/gitea'))
+        repos_path = loader.get('gitea.repos_path', 'git/repositories')
+        return gitea_volume / repos_path / owner / f"{repo_name}.git"
+
+    def _source_repo_exists(self, owner: str, repo_name: str) -> bool:
+        return self._gitea_source_repo_path(owner, repo_name).is_dir()
+
+    @staticmethod
+    def _remove_from_need_review(backup_root: Path, full_name: str) -> None:
+        need_review_file = backup_root / ".need_review"
+        if not need_review_file.exists():
+            return
+        lines = [
+            line
+            for line in need_review_file.read_text(encoding='utf-8').splitlines()
+            if line.strip() and line.strip() != full_name
+        ]
+        need_review_file.write_text(
+            '\n'.join(lines) + ('\n' if lines else ''),
+            encoding='utf-8',
+        )
 
     def get_repositories(self) -> List[Dict]:
         """
@@ -47,6 +79,8 @@ class BackupService:
         # 遍历所有组织目录
         for owner_dir in self.backup_base_path.iterdir():
             if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
+                continue
+            if owner_dir.name == 'reports':
                 continue
 
             # 遍历组织下的所有仓库目录
@@ -110,6 +144,14 @@ class BackupService:
 
         # 检查是否有异常告警
         has_alert = (repo_dir / ".alerts").exists() and (repo_dir / ".alerts").stat().st_size > 0
+        source_exists = self._source_repo_exists(owner, repo_name)
+
+        if not source_exists:
+            status = "orphaned"
+        elif has_alert:
+            status = "warning"
+        else:
+            status = "success"
 
         return {
             "name": repo_name,
@@ -121,7 +163,8 @@ class BackupService:
             "protected_snapshots": protected_count,
             "commit_count": commit_count,
             "disk_usage": repo_size,
-            "status": "warning" if has_alert else "success",
+            "source_exists": source_exists,
+            "status": status,
         }
 
     def get_snapshots(
@@ -467,10 +510,68 @@ class BackupService:
             return False
 
         markers = (
+            '## ⚠️ 本周期新检测异常',
             '## ⚠️ 需要关注的仓库',
             '此报告已自动标记为永久保留',
         )
         return any(marker in head for marker in markers)
+
+    def delete_report(self, filename: str, force: bool = False) -> bool:
+        """删除备份报告（及 meta / protected 侧车）"""
+        if not filename.startswith('report-') or not filename.endswith('.md'):
+            return False
+
+        report_path = self.backup_base_path / "reports" / filename
+        if not report_path.exists() or not report_path.is_file():
+            return False
+
+        protect_file = report_path.with_suffix('.md.protected')
+        if protect_file.exists() and not force:
+            return False
+
+        meta_file = report_path.with_suffix('.md.meta.json')
+        try:
+            if force and protect_file.exists():
+                protect_file.unlink()
+            report_path.unlink()
+            if meta_file.exists():
+                meta_file.unlink()
+            if protect_file.exists():
+                protect_file.unlink()
+            return True
+        except Exception:
+            return False
+
+    def delete_repository(self, full_name: str, force: bool = False) -> bool:
+        """删除整个仓库备份目录（owner/repo）"""
+        parts = full_name.split('/', 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            return False
+
+        owner, repo_name = parts[0], parts[1]
+        repo_dir = self.backup_base_path / owner / repo_name
+        snapshots_dir = repo_dir / "snapshots"
+
+        if not repo_dir.is_dir() or not snapshots_dir.is_dir():
+            return False
+
+        protected = [
+            snap
+            for snap in snapshots_dir.iterdir()
+            if snap.is_dir() and is_snapshot_protected(snap)
+        ]
+        if protected and not force:
+            return False
+
+        try:
+            if force:
+                for snap in protected:
+                    clear_protection_markers(snap)
+            shutil.rmtree(repo_dir)
+            self._remove_from_need_review(self.backup_base_path, full_name)
+            return True
+        except Exception:
+            return False
 
     def get_report_content(self, filename: str) -> Optional[str]:
         """
@@ -562,7 +663,6 @@ class BackupService:
             return False
 
         try:
-            import shutil
             from src.snapshot_utils import clear_protection_markers
 
             if force:

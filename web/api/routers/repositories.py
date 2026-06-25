@@ -2,6 +2,7 @@
 仓库管理路由
 """
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,12 +10,14 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from ..database import get_db
-from ..schemas import RepositoryInfo, RepositoryDetail, BackupTriggerResponse
+from ..schemas import RepositoryInfo, RepositoryDetail, BackupTriggerResponse, MessageResponse
 from ...utils.auth import get_current_user, get_current_admin_user
 from ..models import User
 from ..config import settings
 from ...services.backup_service import BackupService
 from ...services.task_service import TaskService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/repositories", tags=["仓库管理"])
 
@@ -146,3 +149,51 @@ async def backup_repository(
         repository=repo_name,
         message="备份任务已启动",
     )
+
+
+@router.delete("/{full_name:path}", response_model=MessageResponse, summary="删除仓库备份")
+async def delete_repository(
+    full_name: str,
+    force: bool = False,
+    current_admin: User = Depends(get_current_admin_user),
+    backup_service: BackupService = Depends(get_backup_service),
+):
+    """
+    删除整个仓库的本地备份数据（仅管理员，不删除 Gitea 源仓）
+
+    - **full_name**: 仓库全名 owner/repo
+    - **force**: 存在受保护快照时强制删除
+    """
+    repositories = backup_service.get_repositories()
+    repo = next((r for r in repositories if r["full_name"] == full_name), None)
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"仓库 {full_name} 不存在",
+        )
+
+    protected_count = repo.get("protected_snapshots", 0)
+    if protected_count > 0 and not force:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"仓库 {full_name} 含 {protected_count} 个受保护快照，"
+                "无法删除（可使用 force=true 强制删除）"
+            ),
+        )
+
+    success = backup_service.delete_repository(full_name, force=force)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除仓库备份失败",
+        )
+
+    if protected_count > 0 and force:
+        logger.warning(
+            "管理员 %s 强制删除含受保护快照的仓库备份: %s",
+            current_admin.username,
+            full_name,
+        )
+
+    return MessageResponse(message=f"仓库备份 {full_name} 已删除")

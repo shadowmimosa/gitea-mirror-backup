@@ -39,6 +39,14 @@
         </n-scrollbar>
       </n-spin>
     </n-modal>
+
+    <ForceDeleteConfirmModal
+      v-model:show="showForceDeleteModal"
+      title="强制删除报告"
+      description="此报告已标记为永久保留（含异常记录）。强制删除后无法从报告侧追溯该次备份摘要。"
+      :loading="forceDeleteLoading"
+      @confirm="executeForceDelete"
+    />
   </div>
 </template>
 
@@ -46,17 +54,20 @@
 import { ref, computed, onMounted, h } from 'vue'
 import {
   NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, NSpace,
-  NRadioGroup, NRadioButton, NSpin, NEmpty, useMessage
+  NRadioGroup, NRadioButton, NSpin, NEmpty, NPopconfirm, useMessage
 } from 'naive-ui'
-import { DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
+import { DocumentTextOutline, EyeOutline, TrashOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import 'github-markdown-css/github-markdown-dark.css'
 import api from '@/api/client'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 import RefreshButton from '@/components/RefreshButton.vue'
+import ForceDeleteConfirmModal from '@/components/ForceDeleteConfirmModal.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const message = useMessage()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const contentLoading = ref(false)
@@ -64,6 +75,9 @@ const reports = ref<any[]>([])
 const statusFilter = ref<'all' | 'normal' | 'alert'>('all')
 const showModal = ref(false)
 const currentReport = ref<any>(null)
+const forceDeleteFilename = ref('')
+const showForceDeleteModal = ref(false)
+const forceDeleteLoading = ref(false)
 
 const filteredReports = computed(() => {
   if (statusFilter.value === 'all') return reports.value
@@ -73,7 +87,7 @@ const filteredReports = computed(() => {
   return reports.value.filter((r) => !r.has_alerts && !r.is_protected && r.status !== 'alert')
 })
 
-const columns = [
+const columns = computed(() => [
   {
     title: '报告文件',
     key: 'filename',
@@ -110,17 +124,53 @@ const columns = [
     title: '操作',
     key: 'actions',
     render: (row: any) => {
-      return h(
-        NButton,
-        { size: 'small', type: 'primary', onClick: () => viewReport(row) },
-        {
-          icon: () => h(NIcon, null, { default: () => h(EyeOutline) }),
-          default: () => '查看'
+      const buttons: any[] = [
+        h(
+          NButton,
+          { size: 'small', type: 'primary', onClick: () => viewReport(row) },
+          {
+            icon: () => h(NIcon, null, { default: () => h(EyeOutline) }),
+            default: () => '查看'
+          }
+        )
+      ]
+      if (authStore.isAdmin) {
+        if (row.is_protected) {
+          buttons.push(
+            h(
+              NButton,
+              {
+                size: 'small',
+                type: 'error',
+                onClick: () => openForceDeleteModal(row.filename)
+              },
+              { default: () => '强制删除' }
+            )
+          )
+        } else {
+          buttons.push(
+            h(
+              NPopconfirm,
+              { onPositiveClick: () => handleDelete(row.filename) },
+              {
+                trigger: () => h(
+                  NButton,
+                  { size: 'small', type: 'error' },
+                  {
+                    icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+                    default: () => '删除'
+                  }
+                ),
+                default: () => '确定删除此报告吗？'
+              }
+            )
+          )
         }
-      )
+      }
+      return h(NSpace, { size: 4 }, { default: () => buttons })
     }
   }
-]
+])
 
 const pagination = { pageSize: 10 }
 
@@ -159,6 +209,31 @@ async function viewReport(report: any) {
     showModal.value = false
   } finally {
     contentLoading.value = false
+  }
+}
+
+async function handleDelete(filename: string, force = false) {
+  try {
+    await api.delete(`/reports/${filename}`, { params: { force } })
+    message.success('报告已删除')
+    await fetchReports()
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  }
+}
+
+function openForceDeleteModal(filename: string) {
+  forceDeleteFilename.value = filename
+  showForceDeleteModal.value = true
+}
+
+async function executeForceDelete() {
+  forceDeleteLoading.value = true
+  try {
+    await handleDelete(forceDeleteFilename.value, true)
+    showForceDeleteModal.value = false
+  } finally {
+    forceDeleteLoading.value = false
   }
 }
 

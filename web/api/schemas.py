@@ -276,7 +276,8 @@ class RepositoryInfo(BaseModel):
     protected_snapshots: int = 0
     commit_count: int = 0
     disk_usage: int  # 字节
-    status: str  # success, warning
+    source_exists: bool = True
+    status: str  # success, warning, orphaned
 
 
 class RepositoryDetail(RepositoryInfo):

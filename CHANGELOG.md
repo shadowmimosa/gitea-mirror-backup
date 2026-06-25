@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.9] - 2026-06-25
+
+### Added
+
+- **报告删除**：管理员可删除普通报告；受保护报告需强制删除
+- **仓库备份删除**：管理员可删除整个 `owner/repo` 本地备份目录
+- **源仓状态**：仓库列表对照 Gitea 数据目录，源仓已删标记为「源仓已删」（`source_exists`）
+
+### Changed
+
+- 仓库列表说明：数据来自本地备份目录，与 Gitea 源仓独立
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build web
+docker compose up -d web
+```
+
 ## [1.4.8] - 2026-06-25
 
 > 备份脚本版本：`BACKUP_SCRIPT_VERSION` **1.3.8**

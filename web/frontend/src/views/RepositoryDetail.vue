@@ -12,6 +12,13 @@
         </n-button>
         <n-button
           v-if="authStore.isAdmin"
+          type="error"
+          @click="openDeleteBackup"
+        >
+          删除备份
+        </n-button>
+        <n-button
+          v-if="authStore.isAdmin"
           type="warning"
           @click="openRestoreModal"
         >
@@ -51,9 +58,15 @@
             {{ formatDate(repoInfo.last_backup_time) }}
           </n-descriptions-item>
           <n-descriptions-item label="状态">
-            <n-tag :type="repoInfo.status === 'warning' ? 'warning' : 'success'" size="small">
-              {{ repoInfo.status === 'warning' ? '有异常' : '正常' }}
-            </n-tag>
+            <n-space size="small">
+              <n-tag v-if="!repoInfo.source_exists" size="small">源仓已删</n-tag>
+              <n-tag
+                :type="repoInfo.status === 'warning' ? 'warning' : 'success'"
+                size="small"
+              >
+                {{ repoInfo.status === 'warning' ? '有异常' : '正常' }}
+              </n-tag>
+            </n-space>
           </n-descriptions-item>
         </n-descriptions>
       </n-spin>
@@ -194,6 +207,14 @@
       :loading="forceDeleteLoading"
       @confirm="executeForceDelete"
     />
+
+    <ForceDeleteConfirmModal
+      v-model:show="showDeleteBackupModal"
+      title="删除仓库备份"
+      :description="deleteBackupDescription"
+      :loading="deleteBackupLoading"
+      @confirm="executeDeleteBackup"
+    />
   </div>
 </template>
 
@@ -213,6 +234,7 @@ import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import PageActions from '@/components/PageActions.vue'
 import RefreshButton from '@/components/RefreshButton.vue'
 import ForceDeleteSnapshotModal from '@/components/ForceDeleteSnapshotModal.vue'
+import ForceDeleteConfirmModal from '@/components/ForceDeleteConfirmModal.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()
@@ -252,6 +274,17 @@ const bundlePathError = ref('')
 const restoreLoading = ref(false)
 const restorePreview = ref<any>(null)
 const allSnapshotsForRestore = ref<any[]>([])
+const showDeleteBackupModal = ref(false)
+const deleteBackupLoading = ref(false)
+const deleteBackupForce = ref(false)
+
+const deleteBackupDescription = computed(() => {
+  const count = repoInfo.value?.protected_snapshots || 0
+  if (deleteBackupForce.value && count > 0) {
+    return `仓库 ${repositoryName.value} 含 ${count} 个受保护快照。强制删除将清除整个本地备份目录，不会删除 Gitea 源仓。`
+  }
+  return `将删除仓库 ${repositoryName.value} 的全部本地备份数据，不会删除 Gitea 源仓。`
+})
 
 const restoreSnapshotOptions = computed(() =>
   allSnapshotsForRestore.value.map((s: any) => ({
@@ -385,6 +418,38 @@ async function triggerBackup() {
     message.error(getApiErrorMessage(error))
   } finally {
     backupLoading.value = false
+  }
+}
+
+function openDeleteBackup() {
+  const protectedCount = repoInfo.value?.protected_snapshots || 0
+  if (protectedCount > 0) {
+    deleteBackupForce.value = true
+    showDeleteBackupModal.value = true
+    return
+  }
+  dialog.warning({
+    title: '删除仓库备份',
+    content: `确定删除 ${repositoryName.value} 的全部本地备份吗？不会删除 Gitea 源仓。`,
+    positiveText: '删除',
+    negativeText: '取消',
+    onPositiveClick: () => executeDeleteBackup(false)
+  })
+}
+
+async function executeDeleteBackup(force = deleteBackupForce.value) {
+  deleteBackupLoading.value = true
+  try {
+    await api.delete(`/repositories/${encodeURIComponent(repositoryName.value)}`, {
+      params: { force }
+    })
+    message.success('仓库备份已删除')
+    showDeleteBackupModal.value = false
+    router.push('/repositories')
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    deleteBackupLoading.value = false
   }
 }
 
