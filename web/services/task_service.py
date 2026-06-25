@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -17,6 +17,11 @@ from ..api.models import Task, TaskRun, User
 
 
 MANUAL_TASK_NAME = "manual-backup"
+
+
+def utc_now() -> datetime:
+    """统一使用 UTC，避免 started_at / finished_at 时区语义不一致"""
+    return datetime.now(timezone.utc)
 
 # 传给备份容器的环境变量（与 config.yaml / .env 覆盖项对齐）
 BACKUP_ENV_KEYS = (
@@ -123,13 +128,14 @@ class TaskService:
             }
 
         task = self.get_or_create_manual_task()
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = utc_now().strftime("%Y%m%d-%H%M%S")
         log_file = self.log_dir / f"backup-{timestamp}.log"
 
         task_run = TaskRun(
             task_id=task.id,
             user_id=user.id,
             status="running",
+            started_at=utc_now(),
             log_file=str(log_file),
             repository=repository,
         )
@@ -262,11 +268,11 @@ class TaskService:
             run = session.query(TaskRun).filter(TaskRun.id == task_run_id).first()
             if run:
                 run.status = status
-                run.finished_at = datetime.now()
+                run.finished_at = utc_now()
                 run.error_message = error_message
                 task = session.query(Task).filter(Task.id == run.task_id).first()
                 if task:
-                    task.last_run_at = datetime.now()
+                    task.last_run_at = utc_now()
                 session.commit()
         finally:
             session.close()

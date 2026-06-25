@@ -206,6 +206,54 @@ class SnapshotProtectionTests(unittest.TestCase):
 
                 self.assertTrue(snap.exists())
 
+    def test_is_repo_unchanged_when_tracking_matches(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                (snap_dir / "20260625-154615").mkdir()
+
+                backup = self._make_backup(snap_dir)
+                backup.backup_dir.mkdir(parents=True, exist_ok=True)
+                (backup.backup_dir / ".commit_tracking").write_text("42")
+                (backup.backup_dir / ".size_tracking").write_text("100")
+
+                mock_config = MagicMock()
+                mock_config.SKIP_UNCHANGED_SNAPSHOTS = True
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    with patch(
+                        "gitea_mirror_backup.get_commit_count", return_value=42
+                    ):
+                        with patch(
+                            "gitea_mirror_backup.get_directory_size", return_value=100
+                        ):
+                            self.assertTrue(backup.is_repo_unchanged())
+
+    def test_is_repo_unchanged_false_when_commits_differ(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                (snap_dir / "20260625-154615").mkdir()
+
+                backup = self._make_backup(snap_dir)
+                backup.backup_dir.mkdir(parents=True, exist_ok=True)
+                (backup.backup_dir / ".commit_tracking").write_text("42")
+                (backup.backup_dir / ".size_tracking").write_text("100")
+
+                mock_config = MagicMock()
+                mock_config.SKIP_UNCHANGED_SNAPSHOTS = True
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    with patch(
+                        "gitea_mirror_backup.get_commit_count", return_value=50
+                    ):
+                        with patch(
+                            "gitea_mirror_backup.get_directory_size", return_value=100
+                        ):
+                            self.assertFalse(backup.is_repo_unchanged())
+
 
 if __name__ == "__main__":
     unittest.main()

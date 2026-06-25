@@ -32,6 +32,7 @@ class ConfigLoader:
             'root': '/opt/backup/gitea-mirrors',
             'organizations': [],
             'check_mirror_only': False,
+            'skip_unchanged_snapshots': True,
             'retention': {
                 'snapshots_days': 30,
                 'archives_months': 12,
@@ -417,6 +418,10 @@ class Config:
     @property
     def CHECK_MIRROR_ONLY(self) -> bool:
         return self.get_loader().get('backup.check_mirror_only')
+
+    @property
+    def SKIP_UNCHANGED_SNAPSHOTS(self) -> bool:
+        return self.get_loader().get('backup.skip_unchanged_snapshots', True)
 
     @property
     def SNAPSHOT_RETENTION_DAYS(self) -> int:

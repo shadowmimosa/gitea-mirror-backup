@@ -39,6 +39,9 @@ backup:
   
   # 是否检查镜像仓库（如果为 false，备份所有仓库）
   check_mirror_only: false
+
+  # 提交数与大小均未变化时跳过快照创建（默认 true）
+  skip_unchanged_snapshots: true
   
   # 保留策略
   retention:

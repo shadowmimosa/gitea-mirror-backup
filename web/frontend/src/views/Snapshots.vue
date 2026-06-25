@@ -255,9 +255,9 @@ const baseColumns = computed(() => {
         const tags: any[] = []
         if (row.is_protected) {
           tags.push(h(NTag, { type: 'warning', size: 'small' }, { default: () => '已保护' }))
-        }
-        if (row.has_repo_alerts) {
-          tags.push(h(NTag, { type: 'error', size: 'small' }, { default: () => '异常记录' }))
+          if (row.has_repo_alerts) {
+            tags.push(h(NTag, { type: 'error', size: 'small' }, { default: () => '异常保留' }))
+          }
         }
         if (tags.length === 0) {
           return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })

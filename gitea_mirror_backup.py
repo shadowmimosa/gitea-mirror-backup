@@ -39,7 +39,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.6"
+BACKUP_SCRIPT_VERSION = "1.3.7"
 
 
 # ============ 日志配置 ============
@@ -719,11 +719,55 @@ class RepositoryBackup:
         except Exception as e:
             logger.error(f"  ✗ 创建归档失败: {e}")
 
+    def is_repo_unchanged(self) -> bool:
+        """提交数与大小均未变化时跳过快照（需已有历史快照）"""
+        if not config.SKIP_UNCHANGED_SNAPSHOTS:
+            return False
+
+        commit_file = self.backup_dir / ".commit_tracking"
+        size_file = self.backup_dir / ".size_tracking"
+        if not commit_file.exists():
+            return False
+
+        if not self.snapshot_dir.exists():
+            return False
+        if not any(p.is_dir() for p in self.snapshot_dir.iterdir()):
+            return False
+
+        try:
+            prev_commits = int(commit_file.read_text().strip())
+            prev_size = (
+                int(size_file.read_text().strip()) if size_file.exists() else 0
+            )
+        except (ValueError, OSError):
+            return False
+
+        current_commits = get_commit_count(self.repo_path)
+        current_size = get_directory_size(self.repo_path)
+
+        commit_read_failed = current_commits == 0 and prev_commits > 0
+        size_read_failed = current_size == 0 and prev_size > 0
+        if commit_read_failed or size_read_failed:
+            return False
+
+        return current_commits == prev_commits and current_size == prev_size
+
     def process(self):
         """处理单个仓库的完整备份流程"""
         logger.info("=" * 50)
         logger.info(f"处理仓库: {self.full_name}")
         logger.info(f"仓库路径: {self.repo_path}")
+
+        if self.is_repo_unchanged():
+            logger.info("  仓库无变化，跳过快照创建")
+            self.reconcile_stale_protection()
+            self.repair_missing_protection()
+            self.cleanup_old_snapshots()
+            if datetime.now().day == 1:
+                self.create_monthly_archive()
+            self.generate_restore_script()
+            self.generate_restore_via_docker_script()
+            return
 
         # 1. 创建快照
         snapshot_path = self.create_snapshot()
@@ -1181,6 +1225,58 @@ def _repo_has_alerts(repo_dir: Path) -> bool:
     return alert_file.exists() and alert_file.stat().st_size > 0
 
 
+def _is_org_in_backup_scope(org_name: str) -> bool:
+    orgs = config.BACKUP_ORGANIZATIONS
+    if not orgs:
+        return True
+    return org_name.lower() in [org.lower() for org in orgs]
+
+
+def _is_repo_in_backup_scope(repo_full_name: str) -> bool:
+    owner = repo_full_name.split('/', 1)[0]
+    return _is_org_in_backup_scope(owner)
+
+
+def _iter_scoped_org_dirs(backup_root: Path):
+    for org_dir in backup_root.iterdir():
+        if not org_dir.is_dir() or org_dir.name.startswith('.'):
+            continue
+        if org_dir.name == 'reports':
+            continue
+        if _is_org_in_backup_scope(org_dir.name):
+            yield org_dir
+
+
+def _filter_scoped_need_review_entries(backup_root: Path) -> List[str]:
+    need_review_file = backup_root / ".need_review"
+    if not need_review_file.exists():
+        return []
+    entries = [
+        line.strip()
+        for line in need_review_file.read_text(encoding='utf-8').splitlines()
+        if line.strip()
+    ]
+    return [entry for entry in entries if _is_repo_in_backup_scope(entry)]
+
+
+def _clear_scoped_need_review_entries(backup_root: Path):
+    """报告生成后仅清除备份范围内的 need_review 条目"""
+    need_review_file = backup_root / ".need_review"
+    if not need_review_file.exists():
+        return
+
+    all_entries = [
+        line.strip()
+        for line in need_review_file.read_text(encoding='utf-8').splitlines()
+        if line.strip()
+    ]
+    kept = [entry for entry in all_entries if not _is_repo_in_backup_scope(entry)]
+    need_review_file.write_text(
+        '\n'.join(kept) + ('\n' if kept else ''),
+        encoding='utf-8',
+    )
+
+
 def _collect_repo_report_detail(
     backup_root: Path, org_name: str, repo_dir: Path
 ) -> dict:
@@ -1260,9 +1356,8 @@ def send_backup_notification(
             has_alerts = True
             alert_repos = [single_repo]
     else:
-        need_review_file = backup_root / ".need_review"
-        has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
-        alert_repos = []
+        alert_repos = _filter_scoped_need_review_entries(backup_root)
+        has_alerts = len(alert_repos) > 0
 
     total_repos = 0
     total_commits = 0
@@ -1283,12 +1378,11 @@ def send_backup_notification(
             if has_alerts:
                 alert_repos = [single_repo]
     else:
-        for org_dir in backup_root.iterdir():
-            if not org_dir.is_dir() or org_dir.name.startswith('.'):
-                continue
+        for org_dir in _iter_scoped_org_dirs(backup_root):
             for repo_dir in org_dir.iterdir():
                 if not repo_dir.is_dir():
                     continue
+
                 total_repos += 1
 
                 snapshot_dir = repo_dir / "snapshots"
@@ -1309,6 +1403,9 @@ def send_backup_notification(
 
                 if _repo_has_alerts(repo_dir):
                     alert_repos.append(f"{org_dir.name}/{repo_dir.name}")
+
+        if alert_repos:
+            has_alerts = True
 
     report_data = {
         'total_repos': total_repos,
@@ -1403,10 +1500,7 @@ def generate_report(target_repo: Optional[str] = None):
         if str(detail['commits']).isdigit():
             total_commits = int(detail['commits'])
     else:
-        for org_dir in backup_root.iterdir():
-            if not org_dir.is_dir() or org_dir.name.startswith('.'):
-                continue
-
+        for org_dir in _iter_scoped_org_dirs(backup_root):
             for repo_dir in org_dir.iterdir():
                 if not repo_dir.is_dir():
                     continue
@@ -1422,20 +1516,15 @@ def generate_report(target_repo: Optional[str] = None):
                 if str(detail['commits']).isdigit():
                     total_commits += int(detail['commits'])
 
+    scoped_orgs = config.BACKUP_ORGANIZATIONS or []
+
     if single_repo:
         repo_dir = _get_backup_repo_dir(backup_root, single_repo)
         has_alerts = repo_dir and _repo_has_alerts(repo_dir)
         alert_repos = [single_repo] if has_alerts else []
     else:
-        need_review_file = backup_root / ".need_review"
-        has_alerts = need_review_file.exists() and need_review_file.stat().st_size > 0
-        alert_repos = []
-        if has_alerts:
-            alert_repos = [
-                line.strip()
-                for line in need_review_file.read_text(encoding='utf-8').splitlines()
-                if line.strip()
-            ]
+        alert_repos = _filter_scoped_need_review_entries(backup_root)
+        has_alerts = len(alert_repos) > 0
 
     with open(report_file, 'w', encoding='utf-8') as f:
         if single_repo:
@@ -1452,6 +1541,10 @@ def generate_report(target_repo: Optional[str] = None):
         f.write(f"**报告文件**: {report_file.name}\n\n")
 
         f.write("## 📊 总体统计\n\n")
+        if scoped_orgs and not single_repo:
+            f.write(
+                f"- **备份范围**: 仅组织 {', '.join(scoped_orgs)}（不含范围外历史备份）\n"
+            )
         if single_repo:
             f.write(f"- **目标仓库**: {single_repo}\n")
         else:
@@ -1532,7 +1625,7 @@ def generate_report(target_repo: Optional[str] = None):
                     f.write("---\n\n")
 
             if not single_repo:
-                (backup_root / ".need_review").unlink()
+                _clear_scoped_need_review_entries(backup_root)
         else:
             if single_repo:
                 f.write("## ✅ 仓库状态正常\n\n")
@@ -1622,6 +1715,8 @@ def generate_report(target_repo: Optional[str] = None):
             "alert_repos": alert_repos,
             "scope": "single" if single_repo else "full",
         }
+        if scoped_orgs and not single_repo:
+            meta["backup_organizations"] = scoped_orgs
         if single_repo:
             meta["repository"] = single_repo
         meta_file.write_text(
