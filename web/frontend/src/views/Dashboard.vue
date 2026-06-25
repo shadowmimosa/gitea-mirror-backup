@@ -2,18 +2,15 @@
   <div class="dashboard">
     <n-spin :show="loading">
       <PageActions>
-        <n-space>
-          <n-button
-            v-if="authStore.isAdmin"
-            type="primary"
-            size="small"
-            :loading="backupLoading"
-            @click="triggerBackup"
-          >
-            立即备份
-          </n-button>
-          <RefreshButton size="small" :loading="loading" @click="fetchAll" />
-        </n-space>
+        <n-button
+          v-if="authStore.isAdmin"
+          type="primary"
+          :loading="backupLoading"
+          @click="triggerBackup"
+        >
+          立即备份
+        </n-button>
+        <RefreshButton :loading="loading" @click="fetchAll" />
       </PageActions>
 
       <n-card>

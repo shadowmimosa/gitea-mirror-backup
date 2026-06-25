@@ -43,15 +43,6 @@ body {
   min-height: 100vh;
 }
 
-.page-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
