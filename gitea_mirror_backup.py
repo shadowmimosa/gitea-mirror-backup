@@ -1361,8 +1361,42 @@ def generate_report():
         logger.info(f"✓ 报告生成: {report_file}")
 
 
+def resolve_repo_path(full_name: str, repos_path: Path) -> Path:
+    """将 owner/repo 解析为 Gitea 仓库路径"""
+    parts = full_name.strip().split('/')
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError(f"无效的仓库名: {full_name}，格式应为 owner/repo")
+
+    owner, repo_name = parts[0], parts[1]
+    if repo_name.endswith('.git'):
+        repo_name = repo_name[:-4]
+
+    repo_path = repos_path / owner / f"{repo_name}.git"
+    if not repo_path.is_dir():
+        raise FileNotFoundError(f"仓库不存在: {repo_path}")
+
+    return repo_path
+
+
+def process_repository(repo_path: Path, force: bool = False) -> bool:
+    """备份单个仓库。force=True 时跳过组织/镜像过滤（用于 --repo 显式指定）。"""
+    backup = RepositoryBackup(repo_path)
+
+    if not force:
+        if not backup.should_backup():
+            logger.info(f"  跳过: {backup.full_name}")
+            return False
+    else:
+        logger.info(f"  单仓备份模式: {backup.full_name}")
+        if not is_mirror_repo(repo_path):
+            logger.warning(f"  ⚠️ {backup.full_name} 不是镜像仓库，仍按指定继续备份")
+
+    backup.process()
+    return True
+
+
 # ============ 主函数 ============
-def main():
+def main(target_repo: Optional[str] = None):
     """主函数"""
     logger.info("=" * 50)
     logger.info("Gitea Docker 镜像备份任务开始")
@@ -1391,38 +1425,46 @@ def main():
     org_dirs = [d for d in repos_path.iterdir() if d.is_dir()]
     logger.info(f"找到 {len(org_dirs)} 个组织目录: {[d.name for d in org_dirs]}")
 
-    # 处理所有仓库
+    # 处理仓库
     processed_count = 0
     skipped_count = 0
 
-    for org_dir in repos_path.iterdir():
-        if not org_dir.is_dir():
-            continue
-
-        logger.info(f"检查组织: {org_dir.name}")
-
-        # 查找所有 .git 目录
-        git_repos = list(org_dir.glob("*.git"))
-        logger.info(f"  找到 {len(git_repos)} 个 .git 仓库")
-
-        for repo_path in git_repos:
-            if not repo_path.is_dir():
+    if target_repo:
+        try:
+            repo_path = resolve_repo_path(target_repo, repos_path)
+            logger.info(f"单仓备份: {target_repo}")
+            if process_repository(repo_path, force=True):
+                processed_count = 1
+            else:
+                skipped_count = 1
+        except (ValueError, FileNotFoundError) as e:
+            logger.error(str(e))
+            sys.exit(1)
+        except Exception as e:
+            logger.error(f"处理仓库失败 {target_repo}: {e}", exc_info=True)
+            sys.exit(1)
+    else:
+        for org_dir in repos_path.iterdir():
+            if not org_dir.is_dir():
                 continue
 
-            try:
-                backup = RepositoryBackup(repo_path)
-                logger.info(f"  检查仓库: {backup.full_name}")
+            logger.info(f"检查组织: {org_dir.name}")
 
-                if not backup.should_backup():
-                    logger.info(f"  跳过: {backup.full_name}")
-                    skipped_count += 1
+            # 查找所有 .git 目录
+            git_repos = list(org_dir.glob("*.git"))
+            logger.info(f"  找到 {len(git_repos)} 个 .git 仓库")
+
+            for repo_path in git_repos:
+                if not repo_path.is_dir():
                     continue
 
-                backup.process()
-                processed_count += 1
-
-            except Exception as e:
-                logger.error(f"处理仓库失败 {repo_path}: {e}", exc_info=True)
+                try:
+                    if process_repository(repo_path):
+                        processed_count += 1
+                    else:
+                        skipped_count += 1
+                except Exception as e:
+                    logger.error(f"处理仓库失败 {repo_path}: {e}", exc_info=True)
 
     logger.info(f"跳过了 {skipped_count} 个仓库")
 
@@ -1456,6 +1498,7 @@ if __name__ == "__main__":
             epilog="""
 示例:
   %(prog)s                          # 执行完整备份
+  %(prog)s --repo owner/repo        # 仅备份指定仓库
   %(prog)s -c config.yaml           # 使用指定配置文件
   %(prog)s --report                 # 只生成报告
   %(prog)s --cleanup                # 只清理旧报告
@@ -1490,6 +1533,11 @@ if __name__ == "__main__":
             '--dry-run',
             action='store_true',
             help='与 --regenerate-restore-scripts 联用，仅列出将更新的仓库',
+        )
+        parser.add_argument(
+            '--repo',
+            metavar='owner/repo',
+            help='仅备份指定仓库（跳过组织/镜像过滤，格式: owner/repo）',
         )
 
         args = parser.parse_args()
@@ -1554,8 +1602,8 @@ if __name__ == "__main__":
             )
             sys.exit(0 if stats['failed'] == 0 else 1)
 
-        # 执行完整备份
-        main()
+        # 执行备份（全量或单仓）
+        main(target_repo=args.repo)
 
     except KeyboardInterrupt:
         if logger:

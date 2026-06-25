@@ -144,5 +144,5 @@ async def backup_repository(
         status=result["status"],
         already_running=False,
         repository=repo_name,
-        message="备份任务已启动（当前为全量备份）",
+        message="备份任务已启动",
     )

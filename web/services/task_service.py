@@ -130,9 +130,7 @@ class TaskService:
 
         with open(log_file, "w", encoding="utf-8") as log_fp:
             if repository:
-                log_fp.write(
-                    f"注意: 请求备份仓库 {repository}，当前执行全量备份任务\n"
-                )
+                log_fp.write(f"单仓备份: {repository}\n")
 
             if not script_path.exists():
                 log_fp.write(f"错误: 备份脚本不存在: {script_path}\n")
@@ -140,6 +138,8 @@ class TaskService:
                 return
 
             cmd = ["python3", str(script_path), "-c", str(config_path)]
+            if repository:
+                cmd.extend(["--repo", repository])
             return_code = 1
             try:
                 proc = subprocess.Popen(
