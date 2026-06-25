@@ -26,10 +26,11 @@ LABEL description="Web management interface for Gitea Mirror Backup"
 
 WORKDIR /app
 
-# 安装系统依赖
+# 安装系统依赖（git + docker CLI，供 Web 触发备份时检查/操作 Gitea 容器）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     git \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件

@@ -157,9 +157,12 @@ services:
       - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY 等）
       - .env  # 从 .env 文件加载环境变量（包含 SECRET_KEY 等）
     volumes:
-      - gitea-data:/shared:ro  # 只读访问备份数据（安全）
+      # rw：Web 触发备份时需写入 /shared/backup；只读会导致备份失败
+      - gitea-data:/shared:rw
       - ./config.yaml:/app/config.yaml:ro
-      - ./web/data:/app/data   # Web 数据库持久化
+      - ./web/data:/app/data   # Web 数据库与任务日志持久化
+      # 供备份脚本 docker ps / docker exec 访问 Gitea 容器
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     # 使用 profiles 防止默认启动
     profiles:
