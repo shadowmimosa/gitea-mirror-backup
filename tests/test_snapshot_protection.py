@@ -155,5 +155,33 @@ class SnapshotProtectionTests(unittest.TestCase):
                 self.assertTrue((snap_dir / "20260625-020004.protected").exists())
 
 
+    def test_repair_missing_protection_restores_sidecar(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                older = snap_dir / "20260625-020004"
+                newer = snap_dir / "20260625-154615"
+                older.mkdir()
+                newer.mkdir()
+
+                backup = self._make_backup(snap_dir)
+                backup.backup_dir.mkdir(parents=True, exist_ok=True)
+                (backup.backup_dir / ".alerts").write_text(
+                    "[2026-06-25] 提交数异常减少\n", encoding="utf-8"
+                )
+
+                mock_config = MagicMock()
+                mock_config.BACKUP_ROOT = str(Path(tmp))
+                mock_config.PROTECT_ABNORMAL_SNAPSHOTS = True
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    repaired = backup.repair_missing_protection()
+
+                self.assertTrue(repaired)
+                self.assertTrue((snap_dir / "20260625-020004.protected").exists())
+                self.assertFalse((snap_dir / "20260625-154615.protected").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

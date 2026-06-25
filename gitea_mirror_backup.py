@@ -39,7 +39,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.4"
+BACKUP_SCRIPT_VERSION = "1.3.5"
 
 
 # ============ 日志配置 ============
@@ -485,6 +485,42 @@ class RepositoryBackup:
 
         return cleared
 
+    def repair_missing_protection(self) -> bool:
+        """有活跃 .alerts 但无侧车保护时，为异常前的快照补打保护标记"""
+        alert_file = self.backup_dir / ".alerts"
+        if not alert_file.exists() or alert_file.stat().st_size == 0:
+            return False
+
+        if not config.PROTECT_ABNORMAL_SNAPSHOTS:
+            return False
+
+        if not self.snapshot_dir.exists():
+            return False
+
+        sorted_snaps = self._sorted_snapshots(self.snapshot_dir)
+        if not sorted_snaps:
+            return False
+
+        if any(is_snapshot_protected(s) for s in sorted_snaps):
+            return False
+
+        # 与异常检测一致：保护最新快照的前一个（异常发生前的正常状态）
+        target = sorted_snaps[1] if len(sorted_snaps) >= 2 else sorted_snaps[0]
+        reasons = ["自动修复: 仓库存在 .alerts 但缺少侧车保护标记"]
+        try:
+            tail_lines = [
+                line.strip()
+                for line in alert_file.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ][-5:]
+            reasons.extend(tail_lines)
+        except Exception:
+            pass
+
+        self.protect_snapshot(target, reasons)
+        logger.info(f"  🔧 已根据 .alerts 修复保护标记: {target.name}")
+        return True
+
     @staticmethod
     def _sorted_snapshots(snapshot_dir: Path) -> List[Path]:
         """按快照 ID（时间戳目录名）排序，避免 cp -al 导致 mtime 失真"""
@@ -672,6 +708,9 @@ class RepositoryBackup:
 
         # 2. 检测提交数和大小变化（如果异常会自动标记快照为永久保留）
         self.check_commit_changes(snapshot_path)
+
+        # 2b. 修复历史遗留：有 .alerts 但侧车保护被误清的情况
+        self.repair_missing_protection()
 
         # 3. 清理旧快照（跳过被保护的）
         self.cleanup_old_snapshots()
@@ -1040,6 +1079,55 @@ def regenerate_all_restore_scripts(dry_run: bool = False) -> Dict[str, int]:
                 stats["updated"] += 1
             except Exception as e:
                 logger.error(f"更新恢复脚本失败 {owner}/{repo_name}: {e}")
+                stats["failed"] += 1
+
+    return stats
+
+
+def repair_all_missing_protection(dry_run: bool = False) -> Dict[str, int]:
+    """为有 .alerts 但缺少侧车保护的仓库补打保护标记"""
+    backup_root = Path(config.BACKUP_ROOT)
+    repos_path = Path(config.GITEA_DATA_VOLUME) / config.GITEA_REPOS_PATH
+    stats = {"repaired": 0, "skipped": 0, "failed": 0}
+
+    if not backup_root.exists():
+        logger.error(f"备份根目录不存在: {backup_root}")
+        return stats
+
+    for owner_dir in sorted(backup_root.iterdir()):
+        if not owner_dir.is_dir() or owner_dir.name.startswith('.'):
+            continue
+        if owner_dir.name in ('reports',):
+            continue
+
+        for repo_dir in sorted(owner_dir.iterdir()):
+            if not repo_dir.is_dir():
+                continue
+
+            alert_file = repo_dir / ".alerts"
+            if not alert_file.exists() or alert_file.stat().st_size == 0:
+                stats["skipped"] += 1
+                continue
+
+            owner = owner_dir.name
+            repo_name = repo_dir.name
+            repo_path = repos_path / owner / f"{repo_name}.git"
+
+            if dry_run:
+                logger.info(f"[dry-run] 将尝试修复保护: {owner}/{repo_name}")
+                stats["repaired"] += 1
+                continue
+
+            try:
+                backup = RepositoryBackup(repo_path)
+                backup.backup_dir = repo_dir
+                backup.snapshot_dir = repo_dir / "snapshots"
+                if backup.repair_missing_protection():
+                    stats["repaired"] += 1
+                else:
+                    stats["skipped"] += 1
+            except Exception as e:
+                logger.error(f"修复保护标记失败 {owner}/{repo_name}: {e}")
                 stats["failed"] += 1
 
     return stats
@@ -1699,6 +1787,7 @@ if __name__ == "__main__":
   %(prog)s --show-config            # 显示当前配置
   %(prog)s --validate-config        # 验证配置文件
   %(prog)s --regenerate-restore-scripts  # 批量更新 restore.sh
+  %(prog)s --repair-protection          # 根据 .alerts 补打侧车保护标记
 
 环境变量:
   GITEA_DOCKER_CONTAINER            # Docker 容器名称
@@ -1727,6 +1816,11 @@ if __name__ == "__main__":
             '--dry-run',
             action='store_true',
             help='与 --regenerate-restore-scripts 联用，仅列出将更新的仓库',
+        )
+        parser.add_argument(
+            '--repair-protection',
+            action='store_true',
+            help='为有 .alerts 但缺少侧车保护的仓库补打保护标记（不执行备份）',
         )
         parser.add_argument(
             '--repo',
@@ -1791,6 +1885,18 @@ if __name__ == "__main__":
             logger.info(
                 "完成: 更新 %s, 跳过 %s, 失败 %s",
                 stats['updated'],
+                stats['skipped'],
+                stats['failed'],
+            )
+            sys.exit(0 if stats['failed'] == 0 else 1)
+
+        # 补打缺失的侧车保护标记
+        if args.repair_protection:
+            logger.info("根据 .alerts 修复缺失的侧车保护标记...")
+            stats = repair_all_missing_protection(dry_run=args.dry_run)
+            logger.info(
+                "完成: 修复 %s, 跳过 %s, 失败 %s",
+                stats['repaired'],
                 stats['skipped'],
                 stats['failed'],
             )
