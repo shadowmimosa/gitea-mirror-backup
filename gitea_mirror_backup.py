@@ -70,6 +70,23 @@ notifier = None
 
 
 # ============ 工具函数 ============
+def get_docker_bin() -> str:
+    """解析 docker CLI 路径（兼容 docker.io 包与自定义路径）"""
+    candidates = [
+        os.environ.get("DOCKER_BIN"),
+        shutil.which("docker"),
+        shutil.which("docker.io"),
+        "/usr/bin/docker",
+        "/usr/bin/docker.io",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    raise FileNotFoundError(
+        "未找到 docker 命令，请安装 Docker CLI 或设置环境变量 DOCKER_BIN"
+    )
+
+
 def run_command(
     cmd: List[str], check=True, capture_output=True
 ) -> subprocess.CompletedProcess:
@@ -90,7 +107,8 @@ def run_command(
 def check_docker_container() -> bool:
     """检查 Docker 容器是否运行"""
     try:
-        result = run_command(['docker', 'ps'], check=False)
+        docker_bin = get_docker_bin()
+        result = run_command([docker_bin, 'ps'], check=False)
         if config.DOCKER_CONTAINER in result.stdout:
             logger.info("✓ Docker 容器运行正常")
             return True
@@ -120,9 +138,10 @@ def get_commit_count(repo_path: Path) -> int:
         container_path = f"/data/git/repositories/{owner}/{repo}"
 
         # 在容器中使用 git 用户执行 git rev-list --all --count
+        docker_bin = get_docker_bin()
         result = run_command(
             [
-                'docker',
+                docker_bin,
                 'exec',
                 '-u',
                 config.DOCKER_GIT_USER,
@@ -159,9 +178,10 @@ def is_mirror_repo(repo_path: Path) -> bool:
         container_path = f"/data/git/repositories/{owner}/{repo}"
 
         logger.info(f"    检查容器路径: {container_path}")
+        docker_bin = get_docker_bin()
         result = run_command(
             [
-                'docker',
+                docker_bin,
                 'exec',
                 '-u',
                 config.DOCKER_GIT_USER,
@@ -479,9 +499,10 @@ class RepositoryBackup:
             )
 
             # 创建 bundle
+            docker_bin = get_docker_bin()
             run_command(
                 [
-                    'docker',
+                    docker_bin,
                     'exec',
                     '-u',
                     config.DOCKER_GIT_USER,
@@ -499,7 +520,7 @@ class RepositoryBackup:
             # 复制到宿主机
             run_command(
                 [
-                    'docker',
+                    docker_bin,
                     'cp',
                     f"{config.DOCKER_CONTAINER}:/tmp/temp.bundle",
                     str(archive_file),
@@ -509,7 +530,7 @@ class RepositoryBackup:
             # 删除临时文件
             run_command(
                 [
-                    'docker',
+                    docker_bin,
                     'exec',
                     '-u',
                     config.DOCKER_GIT_USER,

@@ -1,12 +1,14 @@
 """
-备份任务服务 - 管理 TaskRun 与 CLI 子进程
+备份任务服务 - 管理 TaskRun 与备份执行
 """
 
+import os
+import shutil
 import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,35 @@ from ..api.models import Task, TaskRun, User
 
 
 MANUAL_TASK_NAME = "manual-backup"
+
+# 传给备份容器的环境变量（与 config.yaml / .env 覆盖项对齐）
+BACKUP_ENV_KEYS = (
+    "TZ",
+    "BACKUP_ROOT",
+    "GITEA_DOCKER_CONTAINER",
+    "GITEA_DOCKER_GIT_USER",
+    "GITEA_DATA_VOLUME",
+    "GITEA_REPOS_PATH",
+    "BACKUP_ORGANIZATIONS",
+    "CHECK_MIRROR_ONLY",
+    "LOG_LEVEL",
+    "LOG_FILE",
+)
+
+
+def resolve_docker_bin() -> Optional[str]:
+    """解析 docker CLI 路径"""
+    candidates = [
+        os.environ.get("DOCKER_BIN"),
+        shutil.which("docker"),
+        shutil.which("docker.io"),
+        "/usr/bin/docker",
+        "/usr/bin/docker.io",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
 
 
 class TaskService:
@@ -121,32 +152,92 @@ class TaskService:
             "repository": repository,
         }
 
+    def _build_backup_command(
+        self, config_path: Path, repository: Optional[str]
+    ) -> Tuple[List[str], str]:
+        """构建备份命令，优先在备份镜像中执行（与 cron/手动 backup 服务一致）"""
+        docker_bin = resolve_docker_bin()
+        docker_sock = Path("/var/run/docker.sock")
+        backup_image = os.environ.get(
+            "BACKUP_DOCKER_IMAGE", "gitea-mirror-backup:latest"
+        )
+        volumes_from = os.environ.get("BACKUP_VOLUMES_FROM", "gitea-backup-web")
+
+        if docker_bin and docker_sock.exists():
+            cmd = [
+                docker_bin,
+                "run",
+                "--rm",
+                "--name",
+                f"gitea-backup-web-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                "--volumes-from",
+                volumes_from,
+                "-v",
+                "/var/run/docker.sock:/var/run/docker.sock:ro",
+            ]
+            for key in BACKUP_ENV_KEYS:
+                value = os.environ.get(key)
+                if value is not None:
+                    cmd.extend(["-e", f"{key}={value}"])
+            cmd.extend(
+                [
+                    backup_image,
+                    "-c",
+                    str(config_path),
+                ]
+            )
+            if repository:
+                cmd.extend(["--repo", repository])
+            return cmd, "docker-run"
+
+        script_path = Path(settings.BACKUP_SCRIPT_PATH)
+        if not script_path.exists():
+            raise FileNotFoundError(f"备份脚本不存在: {script_path}")
+
+        env = os.environ.copy()
+        docker_bin = resolve_docker_bin()
+        if docker_bin:
+            env["DOCKER_BIN"] = docker_bin
+            env["PATH"] = f"{Path(docker_bin).parent}:{env.get('PATH', '')}"
+
+        cmd = ["python3", str(script_path), "-c", str(config_path)]
+        if repository:
+            cmd.extend(["--repo", repository])
+        return cmd, "subprocess"
+
     def _execute_backup(
         self, task_run_id: int, log_file: Path, repository: Optional[str]
     ):
-        db = self.db
-        script_path = Path(settings.BACKUP_SCRIPT_PATH)
         config_path = Path(settings.BACKUP_CONFIG_PATH)
 
         with open(log_file, "w", encoding="utf-8") as log_fp:
             if repository:
                 log_fp.write(f"单仓备份: {repository}\n")
 
-            if not script_path.exists():
-                log_fp.write(f"错误: 备份脚本不存在: {script_path}\n")
-                self._finish_task_run(task_run_id, "failed", "备份脚本不存在")
+            try:
+                cmd, mode = self._build_backup_command(config_path, repository)
+                log_fp.write(f"执行方式: {mode}\n")
+                log_fp.write(f"命令: {' '.join(cmd)}\n\n")
+                log_fp.flush()
+            except FileNotFoundError as exc:
+                log_fp.write(f"错误: {exc}\n")
+                self._finish_task_run(task_run_id, "failed", str(exc))
                 return
 
-            cmd = ["python3", str(script_path), "-c", str(config_path)]
-            if repository:
-                cmd.extend(["--repo", repository])
+            env = os.environ.copy()
+            docker_bin = resolve_docker_bin()
+            if docker_bin:
+                env["DOCKER_BIN"] = docker_bin
+                env["PATH"] = f"{Path(docker_bin).parent}:{env.get('PATH', '')}"
+
             return_code = 1
             try:
                 proc = subprocess.Popen(
                     cmd,
                     stdout=log_fp,
                     stderr=subprocess.STDOUT,
-                    cwd=str(script_path.parent),
+                    cwd=str(Path(settings.BACKUP_SCRIPT_PATH).parent),
+                    env=env,
                 )
                 return_code = proc.wait()
             except Exception as exc:
