@@ -76,6 +76,9 @@ class ConfigService:
             warnings.append(
                 f"备份范围已保存到可写覆盖文件: {self.scope_override_path}"
             )
+            warnings.append(
+                "定时任务与手动 backup 需挂载 web/data 后才会读取合并配置"
+            )
 
         effective_loader = self._loader()
         effective_orgs = effective_loader.get("backup.organizations", [])

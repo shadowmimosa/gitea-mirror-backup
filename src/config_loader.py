@@ -114,12 +114,14 @@ class ConfigLoader:
                 print(f"警告: 指定的配置文件不存在: {config_path}")
                 return None
 
-        # 自动查找配置文件
+        # 自动查找配置文件（Web 合并配置优先于默认 config.yaml）
         search_paths = [
-            Path('config.yaml'),
-            Path('config.yml'),
-            Path.home() / '.config' / 'gitea-mirror-backup' / 'config.yaml',
-            Path('/etc/gitea-mirror-backup/config.yaml'),
+            Path("/app/data/backup-config.effective.yaml"),
+            Path("data/backup-config.effective.yaml"),
+            Path("config.yaml"),
+            Path("config.yml"),
+            Path.home() / ".config" / "gitea-mirror-backup" / "config.yaml",
+            Path("/etc/gitea-mirror-backup/config.yaml"),
         ]
 
         for path in search_paths:

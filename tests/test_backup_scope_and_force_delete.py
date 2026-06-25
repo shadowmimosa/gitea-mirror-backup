@@ -115,5 +115,35 @@ class TestForceDeleteSnapshot(unittest.TestCase):
             self.assertEqual(found["id"], snap_id)
 
 
+class TestEffectiveConfigAutoload(unittest.TestCase):
+    def test_config_loader_prefers_effective_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base_config = Path(tmp) / "config.yaml"
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            base_config.write_text(
+                yaml.dump({"backup": {"organizations": [], "check_mirror_only": False}}),
+                encoding="utf-8",
+            )
+            effective = data_dir / "backup-config.effective.yaml"
+            effective.write_text(
+                yaml.dump(
+                    {"backup": {"organizations": ["CronOrg"], "check_mirror_only": True}}
+                ),
+                encoding="utf-8",
+            )
+
+            import os
+
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(tmp)
+                loader = ConfigLoader()
+                self.assertEqual(loader.get("backup.organizations"), ["CronOrg"])
+                self.assertTrue(loader.get("backup.check_mirror_only"))
+            finally:
+                os.chdir(old_cwd)
+
+
 if __name__ == "__main__":
     unittest.main()

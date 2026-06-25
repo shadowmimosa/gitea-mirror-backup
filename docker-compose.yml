@@ -70,6 +70,9 @@ x-common-volumes: &common-volumes
   # 配置文件挂载（可选，推荐使用 config.yaml 管理复杂配置）
   - ./config.yaml:/app/config.yaml:ro
 
+  # Web 保存的备份范围覆盖（与 cron / 手动 backup 共享）
+  - ./web/data:/app/data:ro
+
 services:
   # ============================================================
   # 备份服务 - 一次性任务
