@@ -39,7 +39,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.5"
+BACKUP_SCRIPT_VERSION = "1.3.6"
 
 
 # ============ 日志配置 ============
@@ -589,6 +589,32 @@ class RepositoryBackup:
         except Exception as e:
             logger.warning(f"标记快照保护失败: {e}")
 
+    @staticmethod
+    def _snapshot_created_at(snapshot: Path) -> datetime:
+        """快照创建时间（优先目录名/元数据，避免 cp -al 继承源仓库旧 mtime）"""
+        name = snapshot.name
+        if (
+            len(name) >= 15
+            and name[8] == "-"
+            and name[:8].isdigit()
+            and name[9:15].isdigit()
+        ):
+            try:
+                return datetime.strptime(name[:15], "%Y%m%d-%H%M%S")
+            except ValueError:
+                pass
+
+        meta = snapshot / ".snapshot_meta"
+        if meta.exists():
+            try:
+                for line in meta.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("timestamp="):
+                        return datetime.fromisoformat(line.split("=", 1)[1].strip())
+            except Exception:
+                pass
+
+        return datetime.fromtimestamp(snapshot.stat().st_mtime)
+
     def cleanup_old_snapshots(self):
         """清理旧快照（跳过被保护的快照）"""
         if not self.snapshot_dir.exists():
@@ -606,9 +632,8 @@ class RepositoryBackup:
                 protected_count += 1
                 continue  # 跳过被保护的快照
 
-            # 检查修改时间
-            mtime = datetime.fromtimestamp(snapshot.stat().st_mtime)
-            if mtime < cutoff_date:
+            snapshot_time = self._snapshot_created_at(snapshot)
+            if snapshot_time < cutoff_date:
                 try:
                     shutil.rmtree(snapshot)
                     deleted_count += 1

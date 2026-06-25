@@ -2,6 +2,8 @@
 
 import tempfile
 import unittest
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -181,6 +183,28 @@ class SnapshotProtectionTests(unittest.TestCase):
                 self.assertTrue(repaired)
                 self.assertTrue((snap_dir / "20260625-020004.protected").exists())
                 self.assertFalse((snap_dir / "20260625-154615.protected").exists())
+
+    def test_cleanup_keeps_recent_snapshot_with_stale_mtime(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                snap = snap_dir / "20260625-173237"
+                snap.mkdir()
+                (snap / ".snapshot_meta").write_text(
+                    "timestamp=2026-06-25T17:32:37\n", encoding="utf-8"
+                )
+                old_time = (datetime.now() - timedelta(days=60)).timestamp()
+                os.utime(snap, (old_time, old_time))
+
+                backup = self._make_backup(snap_dir)
+                mock_config = MagicMock()
+                mock_config.SNAPSHOT_RETENTION_DAYS = 30
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    backup.cleanup_old_snapshots()
+
+                self.assertTrue(snap.exists())
 
 
 if __name__ == "__main__":
