@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.8] - 2026-06-25
+
+> Backup script version (`BACKUP_SCRIPT_VERSION`): **1.3.8**
+
+### Added
+
+- **Web backup scope (P1)**
+  - Settings UI for organization whitelist and mirror-only toggle
+  - Writes `web/data/backup-scope.override.yaml`, merged into `backup-config.effective.yaml`
+  - Cron and manual backup jobs read the effective config
+
+- **Skip snapshots when repo unchanged**
+  - Skips `create_snapshot` when commit count and size match tracking and snapshots exist
+  - Config: `backup.skip_unchanged_snapshots` (default `true`)
+
+- **Scoped backup reports**
+  - Full reports and notifications only count repos in `backup.organizations`
+  - Report meta includes `backup_organizations`
+
+- **Report: new vs historical alerts**
+  - Separates cycle-new alerts (`.need_review`) from historical `.alerts`
+  - Only new-cycle alerts trigger report protection and notifications
+
+- **`--repair-protection`**
+  - Restores missing sidecar protection for repos with `.alerts` without running backup
+
+### Fixed
+
+- **Task monitor timezone mismatch**
+  - `started_at` / `finished_at` stored consistently in UTC
+
+- **Snapshot list false abnormal badges**
+  - “Abnormal retention” tag only on protected snapshots, not all rows when `.alerts` exists
+
+- **Force delete protected snapshots**
+  - API supports `force=true` with confirmation
+
+- **reconcile clearing sidecar protection**
+  - Only clears inline `.protected` inside snapshot dirs
+
+- **Cleanup deleting fresh snapshots**
+  - Retention uses directory name / `.snapshot_meta` timestamp, not inherited mtime from `cp -al`
+
+- **Always keep latest snapshot on cleanup**
+  - At least one newest snapshot retained even when expired and unprotected
+
+- **Orphan sidecar protection files**
+  - Removes `snapshots/<ID>.protected` when snapshot directory is missing
+
+- **Delete snapshot 404 off first page**
+  - Fixed path resolution when deleting from paginated list
+
+- **Dashboard action button alignment**
+- **Unified refresh button UI** across pages
+
+### Changed
+
+- Abnormal-repo filter on snapshot list (repo-level `.alerts`)
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup web
+docker compose up -d web
+
+docker compose run --rm backup --repair-protection
+
+docker compose run --rm backup 2>&1 | grep BACKUP_SCRIPT_VERSION
+# expect 1.3.8
+```
+
+To clear historical alerts after manual review, delete `{BACKUP_ROOT}/{owner}/{repo}/.alerts`.
+
 ## [1.4.7] - 2026-06-08
 
 ### Added

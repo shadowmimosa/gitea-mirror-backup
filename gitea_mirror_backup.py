@@ -26,6 +26,7 @@ except ImportError:
 
 from src.snapshot_utils import (
     clear_protection_markers,
+    cleanup_orphan_protection_markers,
     is_snapshot_protected,
     protection_marker_path,
 )
@@ -39,7 +40,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.7"
+BACKUP_SCRIPT_VERSION = "1.3.8"
 
 
 # ============ 日志配置 ============
@@ -616,21 +617,33 @@ class RepositoryBackup:
         return datetime.fromtimestamp(snapshot.stat().st_mtime)
 
     def cleanup_old_snapshots(self):
-        """清理旧快照（跳过被保护的快照）"""
+        """清理旧快照（跳过被保护的快照，并始终保留最新一个）"""
         if not self.snapshot_dir.exists():
             return
+
+        orphan_removed = cleanup_orphan_protection_markers(self.snapshot_dir)
+        if orphan_removed:
+            logger.info(f"  清理孤儿保护标记: {orphan_removed} 个")
+
+        sorted_snaps = self._sorted_snapshots(self.snapshot_dir)
+        latest_keep = sorted_snaps[0].resolve() if sorted_snaps else None
 
         cutoff_date = datetime.now() - timedelta(days=config.SNAPSHOT_RETENTION_DAYS)
         deleted_count = 0
         protected_count = 0
+        kept_latest_count = 0
 
         for snapshot in self.snapshot_dir.iterdir():
             if not snapshot.is_dir():
                 continue
 
+            if latest_keep and snapshot.resolve() == latest_keep:
+                kept_latest_count += 1
+                continue
+
             if is_snapshot_protected(snapshot):
                 protected_count += 1
-                continue  # 跳过被保护的快照
+                continue
 
             snapshot_time = self._snapshot_created_at(snapshot)
             if snapshot_time < cutoff_date:
@@ -640,10 +653,14 @@ class RepositoryBackup:
                 except Exception as e:
                     logger.warning(f"删除旧快照失败 {snapshot}: {e}")
 
+        cleanup_orphan_protection_markers(self.snapshot_dir)
+
         if deleted_count > 0:
             logger.info(f"  清理旧快照: {deleted_count} 个")
         if protected_count > 0:
             logger.info(f"  跳过受保护快照: {protected_count} 个")
+        if kept_latest_count > 0:
+            logger.info("  保留最新快照: 1 个")
 
     def create_monthly_archive(self):
         """创建月度归档"""
@@ -1277,6 +1294,86 @@ def _clear_scoped_need_review_entries(backup_root: Path):
     )
 
 
+def _collect_historical_alert_repos(
+    backup_root: Path, exclude_repos: set[str]
+) -> List[str]:
+    """有 .alerts 但不在本周期 need_review 中的仓库"""
+    repos: List[str] = []
+    for org_dir in _iter_scoped_org_dirs(backup_root):
+        for repo_dir in org_dir.iterdir():
+            if not repo_dir.is_dir():
+                continue
+            full_name = f"{org_dir.name}/{repo_dir.name}"
+            if full_name in exclude_repos:
+                continue
+            if _repo_has_alerts(repo_dir):
+                repos.append(full_name)
+    return sorted(repos)
+
+
+def _write_report_alert_repo_detail(
+    f, backup_root: Path, repo_name: str, heading_level: str = "###"
+) -> None:
+    """写入报告中的单仓异常详情"""
+    alert_file = backup_root / repo_name / ".alerts"
+    if not alert_file.exists():
+        return
+
+    f.write(f"{heading_level} {repo_name}\n")
+    f.write("```\n")
+    alerts = alert_file.read_text(encoding='utf-8', errors='replace').splitlines()
+    f.write('\n'.join(alerts[-20:]))
+    f.write("\n```\n\n")
+
+    commit_tracking_file = backup_root / repo_name / ".commit_tracking"
+    size_tracking_file = backup_root / repo_name / ".size_tracking"
+
+    current_info = []
+    if commit_tracking_file.exists():
+        try:
+            commits = commit_tracking_file.read_text().strip()
+            current_info.append(f"当前提交数: {commits}")
+        except Exception:
+            pass
+    if size_tracking_file.exists():
+        try:
+            size_kb = int(size_tracking_file.read_text().strip())
+            size_mb = size_kb // 1024
+            current_info.append(f"当前大小: {size_mb}MB")
+        except Exception:
+            pass
+
+    if current_info:
+        f.write(f"**当前状态**: {' | '.join(current_info)}\n\n")
+
+    snapshot_dir = backup_root / repo_name / "snapshots"
+    if snapshot_dir.exists():
+        snapshots = RepositoryBackup._sorted_snapshots(snapshot_dir)
+        latest = snapshots[0].name if snapshots else "无"
+        f.write(f"**最新快照**: {latest}\n")
+
+        protected_snapshots = [
+            s.name
+            for s in snapshots
+            if s.is_dir() and is_snapshot_protected(s)
+        ]
+        if protected_snapshots:
+            f.write(
+                f"**🔒 受保护快照** ({len(protected_snapshots)}个，永久保留):\n"
+            )
+            for ps in protected_snapshots[:5]:
+                f.write(f"  - {ps}\n")
+            if len(protected_snapshots) > 5:
+                f.write(f"  - ... 还有 {len(protected_snapshots) - 5} 个\n")
+        f.write("\n")
+
+    f.write("**恢复命令**:\n")
+    f.write("```bash\n")
+    f.write(f"{backup_root}/{repo_name}/restore.sh\n")
+    f.write("```\n\n")
+    f.write("---\n\n")
+
+
 def _collect_repo_report_detail(
     backup_root: Path, org_name: str, repo_dir: Path
 ) -> dict:
@@ -1349,15 +1446,16 @@ def send_backup_notification(
     single_repo = _normalize_backup_repo_name(target_repo) if target_repo else None
 
     if single_repo:
-        has_alerts = False
-        alert_repos = []
         repo_dir = _get_backup_repo_dir(backup_root, single_repo)
-        if repo_dir and _repo_has_alerts(repo_dir):
-            has_alerts = True
-            alert_repos = [single_repo]
+        new_alert_repos = (
+            [single_repo]
+            if single_repo in _filter_scoped_need_review_entries(backup_root)
+            else []
+        )
+        has_alerts = len(new_alert_repos) > 0
     else:
-        alert_repos = _filter_scoped_need_review_entries(backup_root)
-        has_alerts = len(alert_repos) > 0
+        new_alert_repos = _filter_scoped_need_review_entries(backup_root)
+        has_alerts = len(new_alert_repos) > 0
 
     total_repos = 0
     total_commits = 0
@@ -1375,8 +1473,6 @@ def send_backup_notification(
             if str(detail['commits']).isdigit():
                 total_commits = int(detail['commits'])
             total_size_kb = detail['size_kb']
-            if has_alerts:
-                alert_repos = [single_repo]
     else:
         for org_dir in _iter_scoped_org_dirs(backup_root):
             for repo_dir in org_dir.iterdir():
@@ -1401,12 +1497,6 @@ def send_backup_notification(
 
                 total_size_kb += get_directory_size(repo_dir)
 
-                if _repo_has_alerts(repo_dir):
-                    alert_repos.append(f"{org_dir.name}/{repo_dir.name}")
-
-        if alert_repos:
-            has_alerts = True
-
     report_data = {
         'total_repos': total_repos,
         'total_commits': total_commits,
@@ -1414,7 +1504,7 @@ def send_backup_notification(
         'processed_count': processed_count,
         'skipped_count': skipped_count,
         'has_alerts': has_alerts,
-        'alert_repos': alert_repos,
+        'alert_repos': new_alert_repos,
         'total_size_mb': total_size_kb // 1024,
         'target_repo': single_repo,
     }
@@ -1520,11 +1610,25 @@ def generate_report(target_repo: Optional[str] = None):
 
     if single_repo:
         repo_dir = _get_backup_repo_dir(backup_root, single_repo)
-        has_alerts = repo_dir and _repo_has_alerts(repo_dir)
-        alert_repos = [single_repo] if has_alerts else []
+        new_alert_repos = (
+            [single_repo]
+            if single_repo in _filter_scoped_need_review_entries(backup_root)
+            else []
+        )
+        historical_alert_repos = (
+            [single_repo]
+            if repo_dir
+            and _repo_has_alerts(repo_dir)
+            and single_repo not in new_alert_repos
+            else []
+        )
+        has_alerts = len(new_alert_repos) > 0
     else:
-        alert_repos = _filter_scoped_need_review_entries(backup_root)
-        has_alerts = len(alert_repos) > 0
+        new_alert_repos = _filter_scoped_need_review_entries(backup_root)
+        historical_alert_repos = _collect_historical_alert_repos(
+            backup_root, set(new_alert_repos)
+        )
+        has_alerts = len(new_alert_repos) > 0
 
     with open(report_file, 'w', encoding='utf-8') as f:
         if single_repo:
@@ -1534,7 +1638,7 @@ def generate_report(target_repo: Optional[str] = None):
             f.write("# Gitea 镜像仓库备份报告\n\n")
 
         if has_alerts:
-            f.write("> 🔒 **此报告已自动标记为永久保留**（检测到仓库异常）\n\n")
+            f.write("> 🔒 **此报告已自动标记为永久保留**（本周期检测到新的仓库异常）\n\n")
 
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         f.write(f"**生成时间**: {current_time}\n")
@@ -1554,85 +1658,39 @@ def generate_report(target_repo: Optional[str] = None):
         f.write(f"- **归档总数**: {total_archives}\n")
         f.write(f"- **占用空间**: {total_size // 1024} MB\n\n")
 
-        if has_alerts:
-            f.write("## ⚠️ 需要关注的仓库\n\n")
+        if new_alert_repos:
+            f.write("## ⚠️ 本周期新检测异常\n\n")
             f.write(
-                "以下仓库检测到提交数或大小异常减少，可能发生了 force push 或历史重写：\n\n"
+                "以下仓库在本周期检测到提交数或大小异常减少，可能发生了 force push 或历史重写：\n\n"
             )
 
             reviewed_repos = set()
-            for repo_name in alert_repos:
+            for repo_name in new_alert_repos:
                 if not repo_name or repo_name in reviewed_repos:
                     continue
                 reviewed_repos.add(repo_name)
-
-                alert_file = backup_root / repo_name / ".alerts"
-                if alert_file.exists():
-                    f.write(f"### {repo_name}\n")
-                    f.write("```\n")
-                    alerts = alert_file.read_text().splitlines()
-                    f.write('\n'.join(alerts[-20:]))
-                    f.write("\n```\n\n")
-
-                    commit_tracking_file = backup_root / repo_name / ".commit_tracking"
-                    size_tracking_file = backup_root / repo_name / ".size_tracking"
-
-                    current_info = []
-                    if commit_tracking_file.exists():
-                        try:
-                            commits = commit_tracking_file.read_text().strip()
-                            current_info.append(f"当前提交数: {commits}")
-                        except Exception:
-                            pass
-                    if size_tracking_file.exists():
-                        try:
-                            size_kb = int(size_tracking_file.read_text().strip())
-                            size_mb = size_kb // 1024
-                            current_info.append(f"当前大小: {size_mb}MB")
-                        except Exception:
-                            pass
-
-                    if current_info:
-                        f.write(f"**当前状态**: {' | '.join(current_info)}\n\n")
-
-                    snapshot_dir = backup_root / repo_name / "snapshots"
-                    if snapshot_dir.exists():
-                        snapshots = RepositoryBackup._sorted_snapshots(snapshot_dir)
-                        latest = snapshots[0].name if snapshots else "无"
-                        f.write(f"**最新快照**: {latest}\n")
-
-                        protected_snapshots = [
-                            s.name
-                            for s in snapshots
-                            if s.is_dir() and is_snapshot_protected(s)
-                        ]
-                        if protected_snapshots:
-                            f.write(
-                                f"**🔒 受保护快照** ({len(protected_snapshots)}个，永久保留):\n"
-                            )
-                            for ps in protected_snapshots[:5]:
-                                f.write(f"  - {ps}\n")
-                            if len(protected_snapshots) > 5:
-                                f.write(
-                                    f"  - ... 还有 {len(protected_snapshots) - 5} 个\n"
-                                )
-                        f.write("\n")
-
-                    f.write("**恢复命令**:\n")
-                    f.write("```bash\n")
-                    f.write(f"{backup_root}/{repo_name}/restore.sh\n")
-                    f.write("```\n\n")
-                    f.write("---\n\n")
+                _write_report_alert_repo_detail(f, backup_root, repo_name)
 
             if not single_repo:
                 _clear_scoped_need_review_entries(backup_root)
-        else:
+        elif not historical_alert_repos:
             if single_repo:
                 f.write("## ✅ 仓库状态正常\n\n")
                 f.write("本仓库未检测到异常。\n\n")
             else:
                 f.write("## ✅ 全部正常\n\n")
                 f.write("本周期内所有仓库均未检测到异常。\n\n")
+        else:
+            f.write("## ✅ 本周期无新异常\n\n")
+            f.write("本周期未检测到新的仓库异常。\n\n")
+
+        if historical_alert_repos:
+            f.write("## 📋 历史未处理异常（.alerts）\n\n")
+            f.write(
+                "以下仓库仍有历史异常记录，需人工确认后删除对应目录下的 `.alerts` 文件：\n\n"
+            )
+            for repo_name in historical_alert_repos:
+                _write_report_alert_repo_detail(f, backup_root, repo_name)
 
         # 提交数变化统计
         repos_with_changes = [r for r in repo_details if r['commit_change']]
@@ -1712,7 +1770,9 @@ def generate_report(target_repo: Optional[str] = None):
         meta = {
             "has_alerts": has_alerts,
             "generated_at": datetime.now().isoformat(),
-            "alert_repos": alert_repos,
+            "new_alert_repos": new_alert_repos,
+            "historical_alert_repos": historical_alert_repos,
+            "alert_repos": new_alert_repos,
             "scope": "single" if single_repo else "full",
         }
         if scoped_orgs and not single_repo:

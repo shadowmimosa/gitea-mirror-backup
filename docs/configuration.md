@@ -160,6 +160,7 @@ backup:
   root: /opt/backup/gitea-mirrors
   organizations: []  # 留空表示备份所有组织
   check_mirror_only: false
+  skip_unchanged_snapshots: true  # 提交数与大小未变化时跳过快照（默认 true）
   
   # 保留策略
   retention:
@@ -198,6 +199,17 @@ notifications:
     url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
     notify_on: on_alert  # always, on_alert, never
 ```
+
+### Web 备份范围覆盖（Docker 部署）
+
+在 Web 设置页修改的组织白名单与镜像开关写入：
+
+- `web/data/backup-scope.override.yaml`（可写）
+- 合并生成 `web/data/backup-config.effective.yaml`
+
+备份容器需挂载 `web/data`（`docker-compose.yml` 中 `common-volumes` 已包含）。定时任务与手动备份通过 `-c` 读取有效配置。**全量报告与通知**亦按该范围统计。
+
+环境变量 `BACKUP_ORGANIZATIONS` 仍会覆盖 YAML 中的 `organizations`。
 
 ## 🔀 方式 3: 混合使用（推荐用于生产环境）
 

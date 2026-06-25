@@ -206,6 +206,46 @@ class SnapshotProtectionTests(unittest.TestCase):
 
                 self.assertTrue(snap.exists())
 
+    def test_cleanup_keeps_latest_even_when_expired(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                older = snap_dir / "20260101-020004"
+                newer = snap_dir / "20260625-154615"
+                older.mkdir()
+                newer.mkdir()
+                old_time = (datetime.now() - timedelta(days=60)).timestamp()
+                os.utime(older, (old_time, old_time))
+                os.utime(newer, (old_time, old_time))
+
+                backup = self._make_backup(snap_dir)
+                mock_config = MagicMock()
+                mock_config.SNAPSHOT_RETENTION_DAYS = 30
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    backup.cleanup_old_snapshots()
+
+                self.assertFalse(older.exists())
+                self.assertTrue(newer.exists())
+
+    def test_cleanup_removes_orphan_protection_markers(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                orphan_marker = snap_dir / "20260625-154615.protected"
+                orphan_marker.write_text("orphan", encoding="utf-8")
+
+                backup = self._make_backup(snap_dir)
+                mock_config = MagicMock()
+                mock_config.SNAPSHOT_RETENTION_DAYS = 30
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    backup.cleanup_old_snapshots()
+
+                self.assertFalse(orphan_marker.exists())
+
     def test_is_repo_unchanged_when_tracking_matches(self):
         with patch("gitea_mirror_backup.logger", MagicMock()):
             with tempfile.TemporaryDirectory() as tmp:

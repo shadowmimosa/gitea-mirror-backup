@@ -2,7 +2,7 @@ FROM python:3.9-slim-bullseye
 
 LABEL maintainer="your-email@example.com"
 LABEL description="Gitea Mirror Backup - Intelligent backup solution for Gitea mirror repositories"
-LABEL version="1.3.3"
+LABEL version="1.4.8"
 
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \

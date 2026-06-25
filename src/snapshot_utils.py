@@ -32,3 +32,21 @@ def clear_protection_markers(snapshot_path: Path) -> int:
         sidecar.unlink()
         cleared += 1
     return cleared
+
+
+def cleanup_orphan_protection_markers(snapshot_dir: Path) -> int:
+    """删除无对应快照目录的侧车 .protected 文件"""
+    if not snapshot_dir.exists():
+        return 0
+
+    removed = 0
+    for marker in snapshot_dir.glob("*.protected"):
+        snap_id = marker.name.removesuffix(".protected")
+        if not snap_id or (snapshot_dir / snap_id).is_dir():
+            continue
+        try:
+            marker.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed

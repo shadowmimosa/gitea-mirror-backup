@@ -6,6 +6,85 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [1.4.8] - 2026-06-25
+
+> 备份脚本版本：`BACKUP_SCRIPT_VERSION` **1.3.8**
+
+### Added
+
+- **Web 备份范围配置（P1）**
+  - 设置页支持组织白名单与「仅镜像仓」开关
+  - 写入 `web/data/backup-scope.override.yaml`，合并为 `backup-config.effective.yaml`
+  - 定时任务与手动备份均读取有效配置
+
+- **无变化仓库跳过快照**
+  - 提交数与大小均未变化且已有历史快照时，跳过 `create_snapshot`
+  - 配置项 `backup.skip_unchanged_snapshots`（默认 `true`）
+
+- **备份报告按组织范围统计**
+  - 全量报告与通知仅统计 `backup.organizations` 范围内的仓库
+  - 报告 meta 增加 `backup_organizations`
+
+- **报告区分本周期异常与历史遗留**
+  - 「本周期新检测异常」（来自 `.need_review`）与「历史未处理异常（`.alerts`）」分开展示
+  - 仅本周期新异常触发报告永久保留与通知告警
+
+- **`--repair-protection`**
+  - 为有 `.alerts` 但缺少侧车保护的仓库补打保护标记（不执行备份）
+
+### Fixed
+
+- **任务监控开始/结束时间时区不一致**
+  - `started_at` / `finished_at` 统一以 UTC 写入
+
+- **快照列表异常标记误标**
+  - 「异常保留」仅显示在受保护快照上，不再因仓库级 `.alerts` 标红全部快照
+
+- **受保护快照强制删除**
+  - API 支持 `force=true` 二次确认后删除受保护快照
+
+- **reconcile 误清侧车保护**
+  - 仅清除快照目录内遗留 `.protected`，不再删除侧车文件
+
+- **清理快照误删新快照**
+  - 过期判断优先使用目录名时间戳 / `.snapshot_meta`，避免 `cp -al` 继承 mtime 导致刚创建的快照被删
+
+- **清理后至少保留一个最新快照**
+  - 未受保护快照超期清理时，始终保留最新一份，避免无变化跳过叠加后目录被清空
+
+- **孤儿侧车保护文件**
+  - 自动清理无对应快照目录的 `snapshots/<ID>.protected`
+
+- **删除非首页快照 404**
+  - 修复分页后删除快照路径解析错误
+
+- **仪表板操作区按钮对齐**
+  - 统一刷新等按钮尺寸与间距
+
+- **各页刷新按钮 UI**
+  - 统一 `RefreshButton` 组件与 loading 状态
+
+### Changed
+
+- 异常仓库筛选：快照列表支持按仓库级 `.alerts` 筛选
+
+### Upgrade Notes
+
+```bash
+git pull
+docker compose build backup web
+docker compose up -d web
+
+# 可选：为有 .alerts 但缺保护的仓库补打标记
+docker compose run --rm backup --repair-protection
+
+# 验证备份脚本版本
+docker compose run --rm backup 2>&1 | grep 备份脚本版本
+# 应显示 1.3.8
+```
+
+**处理历史异常**：确认仓库正常后，手动删除 `{BACKUP_ROOT}/{owner}/{repo}/.alerts`。
+
 ## [1.4.7] - 2026-06-08
 
 ### Added
