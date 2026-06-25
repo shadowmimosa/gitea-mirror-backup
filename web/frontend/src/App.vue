@@ -42,5 +42,37 @@ body {
   width: 100%;
   min-height: 100vh;
 }
+
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+}
+
+.filter-item__label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  line-height: 1;
+}
 </style>
 

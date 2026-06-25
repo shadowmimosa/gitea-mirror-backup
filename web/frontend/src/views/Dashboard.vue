@@ -1,27 +1,27 @@
 <template>
   <div class="dashboard">
     <n-spin :show="loading">
-      <n-card title="仪表板">
-        <template #header-extra>
-          <n-space>
-            <n-button
-              v-if="authStore.isAdmin"
-              type="primary"
-              size="small"
-              :loading="backupLoading"
-              @click="triggerBackup"
-            >
-              立即备份
-            </n-button>
-            <n-button size="small" @click="fetchAll">
-              <template #icon>
-                <n-icon><RefreshOutline /></n-icon>
-              </template>
-              刷新
-            </n-button>
-          </n-space>
-        </template>
+      <PageActions>
+        <n-space>
+          <n-button
+            v-if="authStore.isAdmin"
+            type="primary"
+            size="small"
+            :loading="backupLoading"
+            @click="triggerBackup"
+          >
+            立即备份
+          </n-button>
+          <n-button size="small" @click="fetchAll">
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
+          </n-button>
+        </n-space>
+      </PageActions>
 
+      <n-card>
         <n-empty
           v-if="!loading && loadError"
           description="统计数据加载失败"
@@ -137,6 +137,7 @@ import {
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { getApiErrorMessage } from '@/utils/errorHandler'
+import PageActions from '@/components/PageActions.vue'
 
 const message = useMessage()
 const router = useRouter()

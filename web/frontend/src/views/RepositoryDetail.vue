@@ -2,44 +2,39 @@
   <div class="repository-detail">
     <PageBreadcrumb :items="breadcrumbItems" />
 
+    <PageActions>
+      <n-space>
+        <n-button text @click="$router.push('/repositories')">
+          <template #icon>
+            <n-icon><ArrowBackOutline /></n-icon>
+          </template>
+          返回列表
+        </n-button>
+        <n-button
+          v-if="authStore.isAdmin"
+          type="warning"
+          @click="openRestoreModal"
+        >
+          恢复
+        </n-button>
+        <n-button
+          v-if="authStore.isAdmin"
+          type="success"
+          :loading="backupLoading"
+          @click="triggerBackup"
+        >
+          立即备份
+        </n-button>
+        <n-button type="primary" @click="fetchSnapshots">
+          <template #icon>
+            <n-icon><RefreshOutline /></n-icon>
+          </template>
+          刷新
+        </n-button>
+      </n-space>
+    </PageActions>
+
     <n-card>
-      <template #header>
-        <n-space align="center">
-          <n-button text @click="$router.push('/repositories')">
-            <template #icon>
-              <n-icon><ArrowBackOutline /></n-icon>
-            </template>
-          </n-button>
-          <span>{{ repositoryName }}</span>
-        </n-space>
-      </template>
-
-      <template #header-extra>
-        <n-space>
-          <n-button
-            v-if="authStore.isAdmin"
-            type="warning"
-            @click="openRestoreModal"
-          >
-            恢复
-          </n-button>
-          <n-button
-            v-if="authStore.isAdmin"
-            type="success"
-            :loading="backupLoading"
-            @click="triggerBackup"
-          >
-            立即备份
-          </n-button>
-          <n-button type="primary" @click="fetchSnapshots">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            刷新
-          </n-button>
-        </n-space>
-      </template>
-
       <n-spin :show="loading && !repoInfo">
         <n-descriptions v-if="repoInfo" :column="3" bordered style="margin-bottom: 20px;">
           <n-descriptions-item label="仓库全名">
@@ -70,11 +65,11 @@
 
       <n-divider>快照列表</n-divider>
 
-      <n-space style="margin-bottom: 12px;" wrap>
-        <n-switch v-model:value="includeSize" size="small" @update:value="fetchSnapshots">
-          <template #checked>显示大小</template>
-          <template #unchecked>隐藏大小</template>
-        </n-switch>
+      <div class="filter-bar">
+        <div class="filter-item">
+          <span class="filter-item__label">{{ includeSize ? '显示大小' : '隐藏大小' }}</span>
+          <n-switch v-model:value="includeSize" size="small" @update:value="fetchSnapshots" />
+        </div>
         <template v-if="authStore.isAdmin">
           <n-button
             type="error"
@@ -91,7 +86,7 @@
             正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
           </n-text>
         </template>
-      </n-space>
+      </div>
 
       <n-empty
         v-if="!loading && snapshots.length === 0"
@@ -211,6 +206,7 @@ import { RefreshOutline, TrashOutline, ArrowBackOutline } from '@vicons/ionicons
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
+import PageActions from '@/components/PageActions.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()
@@ -221,8 +217,7 @@ const authStore = useAuthStore()
 
 const repositoryName = computed(() => decodeURIComponent(route.params.name as string))
 const breadcrumbItems = computed(() => [
-  { label: '仓库管理', path: '/repositories' },
-  { label: repositoryName.value }
+  { label: '仓库管理', path: '/repositories' }
 ])
 
 const loading = ref(false)

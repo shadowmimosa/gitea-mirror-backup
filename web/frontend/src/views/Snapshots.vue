@@ -1,7 +1,5 @@
 <template>
   <div class="snapshots">
-    <PageBreadcrumb :items="[{ label: '快照管理' }]" />
-
     <n-card title="快照列表">
       <template #header-extra>
         <n-button type="primary" @click="fetchSnapshots">
@@ -12,47 +10,45 @@
         </n-button>
       </template>
 
-      <n-space vertical style="margin-bottom: 12px; width: 100%;">
-        <n-space wrap>
-          <n-input
-            v-model:value="repositorySearch"
-            placeholder="搜索仓库 owner/repo"
-            clearable
-            style="width: 220px;"
-            @keyup.enter="applyFilters"
-          />
-          <n-select
-            v-model:value="protectedFilter"
-            :options="protectedOptions"
-            style="width: 140px;"
-          />
-          <n-switch v-model:value="includeSize" size="small">
-            <template #checked>显示大小</template>
-            <template #unchecked>隐藏大小</template>
-          </n-switch>
-          <n-button @click="applyFilters">筛选</n-button>
-          <n-button @click="showProtectedOnly">仅受保护</n-button>
-          <n-button @click="resetFilters">重置</n-button>
-        </n-space>
-        <n-space v-if="authStore.isAdmin">
-          <n-button
-            type="error"
-            :disabled="selectedSnapshots.length === 0 || hasProtectedSelected || batchDeleting"
-            :loading="batchDeleting"
-            @click="handleBatchDelete"
-          >
-            <template #icon>
-              <n-icon><TrashOutline /></n-icon>
-            </template>
-            批量删除 ({{ selectedSnapshots.length }})
-          </n-button>
-          <n-text v-if="batchDeleting" depth="3" style="font-size: 12px;">
-            正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
-          </n-text>
-          <n-text v-else-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
-            已选择的快照中包含受保护的快照，无法删除
-          </n-text>
-        </n-space>
+      <div class="filter-bar">
+        <n-input
+          v-model:value="repositorySearch"
+          placeholder="搜索仓库 owner/repo"
+          clearable
+          style="width: 220px;"
+          @keyup.enter="applyFilters"
+        />
+        <n-select
+          v-model:value="protectedFilter"
+          :options="protectedOptions"
+          style="width: 140px;"
+        />
+        <div class="filter-item">
+          <span class="filter-item__label">{{ includeSize ? '显示大小' : '隐藏大小' }}</span>
+          <n-switch v-model:value="includeSize" size="small" />
+        </div>
+        <n-button @click="applyFilters">筛选</n-button>
+        <n-button @click="showProtectedOnly">仅受保护</n-button>
+        <n-button @click="resetFilters">重置</n-button>
+      </div>
+      <n-space v-if="authStore.isAdmin" style="margin-bottom: 12px;">
+        <n-button
+          type="error"
+          :disabled="selectedSnapshots.length === 0 || hasProtectedSelected || batchDeleting"
+          :loading="batchDeleting"
+          @click="handleBatchDelete"
+        >
+          <template #icon>
+            <n-icon><TrashOutline /></n-icon>
+          </template>
+          批量删除 ({{ selectedSnapshots.length }})
+        </n-button>
+        <n-text v-if="batchDeleting" depth="3" style="font-size: 12px;">
+          正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
+        </n-text>
+        <n-text v-else-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
+          已选择的快照中包含受保护的快照，无法删除
+        </n-text>
       </n-space>
 
       <n-empty
@@ -101,7 +97,6 @@ import {
 import { RefreshOutline, TrashOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()

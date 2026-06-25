@@ -1,28 +1,26 @@
 <template>
   <div class="tasks">
-    <PageBreadcrumb :items="breadcrumbItems" />
+    <PageActions>
+      <n-space>
+        <n-button
+          v-if="authStore.isAdmin"
+          type="primary"
+          :loading="triggerLoading"
+          :disabled="runningTask?.status === 'running'"
+          @click="triggerBackup"
+        >
+          立即全量备份
+        </n-button>
+        <n-button @click="refreshAll">
+          <template #icon>
+            <n-icon><RefreshOutline /></n-icon>
+          </template>
+          刷新
+        </n-button>
+      </n-space>
+    </PageActions>
 
-    <n-card title="任务监控">
-      <template #header-extra>
-        <n-space>
-          <n-button
-            v-if="authStore.isAdmin"
-            type="primary"
-            :loading="triggerLoading"
-            :disabled="runningTask?.status === 'running'"
-            @click="triggerBackup"
-          >
-            立即全量备份
-          </n-button>
-          <n-button @click="refreshAll">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            刷新
-          </n-button>
-        </n-space>
-      </template>
-
+    <n-card>
       <n-alert
         v-if="runningTask"
         type="info"
@@ -85,13 +83,11 @@ import {
 import { RefreshOutline, EyeOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
+import PageActions from '@/components/PageActions.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const message = useMessage()
 const authStore = useAuthStore()
-
-const breadcrumbItems = [{ label: '任务监控' }]
 
 const loading = ref(false)
 const triggerLoading = ref(false)

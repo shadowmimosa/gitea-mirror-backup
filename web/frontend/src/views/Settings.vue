@@ -1,8 +1,6 @@
 <template>
   <div class="settings">
-    <PageBreadcrumb :items="[{ label: '系统设置' }]" />
-
-    <n-card title="系统设置">
+    <n-card>
       <n-spin :show="loading">
         <n-tabs type="line" animated>
           <n-tab-pane name="basic" tab="基础信息">
@@ -109,7 +107,6 @@ import {
 } from 'naive-ui'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const message = useMessage()

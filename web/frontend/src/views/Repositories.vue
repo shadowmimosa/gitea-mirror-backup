@@ -1,7 +1,5 @@
 <template>
   <div class="repositories">
-    <PageBreadcrumb :items="[{ label: '仓库管理' }]" />
-
     <n-card title="仓库列表">
       <template #header-extra>
         <n-button type="primary" @click="fetchRepositories">
@@ -35,7 +33,6 @@ import { useRouter } from 'vue-router'
 import { NCard, NButton, NDataTable, NIcon, NTag, NEmpty, useMessage } from 'naive-ui'
 import { RefreshOutline, EyeOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
-import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const router = useRouter()

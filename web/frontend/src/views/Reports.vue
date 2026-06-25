@@ -1,7 +1,5 @@
 <template>
   <div class="reports">
-    <PageBreadcrumb :items="[{ label: '报告查看' }]" />
-
     <n-card title="报告列表">
       <template #header-extra>
         <n-space>
@@ -60,7 +58,6 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import 'github-markdown-css/github-markdown-dark.css'
 import api from '@/api/client'
-import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const message = useMessage()
