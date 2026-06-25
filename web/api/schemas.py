@@ -297,6 +297,7 @@ class SnapshotInfo(BaseModel):
     created_at: datetime
     size: int  # 字节
     is_protected: bool = False
+    has_repo_alerts: bool = False
     status: str
 
 

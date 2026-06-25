@@ -39,7 +39,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.3"
+BACKUP_SCRIPT_VERSION = "1.3.4"
 
 
 # ============ 日志配置 ============
@@ -455,7 +455,7 @@ class RepositoryBackup:
         return None
 
     def reconcile_stale_protection(self) -> int:
-        """无活跃告警时清除保护标记（侧车 + 目录内遗留）"""
+        """无活跃告警时仅清除快照目录内遗留的 .protected（不删除侧车保护标记）"""
         alert_file = self.backup_dir / ".alerts"
         if alert_file.exists() and alert_file.stat().st_size > 0:
             return 0
@@ -464,11 +464,14 @@ class RepositoryBackup:
         if not self.snapshot_dir.exists():
             return 0
 
+        from src.snapshot_utils import clear_inline_protection_artifact
+
         for snapshot in self._sorted_snapshots(self.snapshot_dir):
-            cleared += clear_protection_markers(snapshot)
+            if clear_inline_protection_artifact(snapshot):
+                cleared += 1
 
         if cleared:
-            logger.info(f"  无活跃告警，已清除 {cleared} 个保护标记")
+            logger.info(f"  无活跃告警，已清除 {cleared} 个目录内遗留保护标记")
 
         need_review_file = Path(config.BACKUP_ROOT) / ".need_review"
         if need_review_file.exists() and need_review_file.stat().st_size > 0:

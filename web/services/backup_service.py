@@ -131,6 +131,7 @@ class BackupService:
         page_size: int = 10,
         include_size: bool = False,
         is_protected: Optional[bool] = None,
+        has_repo_alerts: Optional[bool] = None,
         repository_search: Optional[str] = None,
     ) -> List[Dict]:
         """
@@ -153,6 +154,7 @@ class BackupService:
         snapshot_basics = self._filter_snapshots(
             snapshot_basics,
             is_protected=is_protected,
+            has_repo_alerts=has_repo_alerts,
             repository_search=repository_search,
         )
 
@@ -217,12 +219,18 @@ class BackupService:
         return snapshot_basics
 
     @staticmethod
+    def _repo_has_alerts(repo_dir: Path) -> bool:
+        alert_file = repo_dir / ".alerts"
+        return alert_file.exists() and alert_file.stat().st_size > 0
+
+    @staticmethod
     def _filter_snapshots(
         snapshots: List[Dict],
         is_protected: Optional[bool] = None,
+        has_repo_alerts: Optional[bool] = None,
         repository_search: Optional[str] = None,
     ) -> List[Dict]:
-        """按保护状态与仓库名筛选"""
+        """按保护状态、异常记录与仓库名筛选"""
         result = snapshots
         if repository_search:
             keyword = repository_search.strip().lower()
@@ -232,6 +240,10 @@ class BackupService:
                 ]
         if is_protected is not None:
             result = [s for s in result if s["is_protected"] == is_protected]
+        if has_repo_alerts is not None:
+            result = [
+                s for s in result if s.get("has_repo_alerts", False) == has_repo_alerts
+            ]
         return result
 
     def _get_repo_snapshots(
@@ -243,6 +255,8 @@ class BackupService:
 
         if not snapshots_dir.exists():
             return snapshots
+
+        repo_has_alerts = self._repo_has_alerts(repo_dir)
 
         for snapshot_dir in snapshots_dir.iterdir():
             if not snapshot_dir.is_dir():
@@ -290,6 +304,7 @@ class BackupService:
                 "created_at": created_at,
                 "size": size,
                 "is_protected": is_protected,
+                "has_repo_alerts": repo_has_alerts,
                 "status": "protected" if is_protected else "success",
             }
             snapshots.append(snapshot_info)
@@ -305,6 +320,8 @@ class BackupService:
 
         if not snapshots_dir.exists():
             return snapshots
+
+        repo_has_alerts = self._repo_has_alerts(repo_dir)
 
         for snapshot_dir in snapshots_dir.iterdir():
             if not snapshot_dir.is_dir():
@@ -334,6 +351,7 @@ class BackupService:
                 "repository": f"{owner}/{repo_name}",
                 "created_at": created_at,
                 "is_protected": is_protected,
+                "has_repo_alerts": repo_has_alerts,
                 "status": "protected" if is_protected else "success",
                 "_path": snapshot_dir,  # 保存路径用于后续计算大小
             }
@@ -376,6 +394,7 @@ class BackupService:
         self,
         repository: Optional[str] = None,
         is_protected: Optional[bool] = None,
+        has_repo_alerts: Optional[bool] = None,
         repository_search: Optional[str] = None,
     ) -> int:
         """
@@ -384,6 +403,7 @@ class BackupService:
         Args:
             repository: 仓库全名 "owner/repo"（可选）
             is_protected: 是否仅统计受保护快照
+            has_repo_alerts: 是否仅统计存在异常记录的仓库
             repository_search: 仓库名模糊搜索
 
         Returns:
@@ -393,6 +413,7 @@ class BackupService:
         snapshot_basics = self._filter_snapshots(
             snapshot_basics,
             is_protected=is_protected,
+            has_repo_alerts=has_repo_alerts,
             repository_search=repository_search,
         )
         return len(snapshot_basics)

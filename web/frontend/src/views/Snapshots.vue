@@ -24,6 +24,7 @@
         </div>
         <n-button @click="applyFilters">筛选</n-button>
         <n-button @click="showProtectedOnly">仅受保护</n-button>
+        <n-button @click="showAlertReposOnly">异常仓库</n-button>
         <n-button @click="resetFilters">重置</n-button>
       </div>
       <n-space v-if="authStore.isAdmin" style="margin-bottom: 12px;">
@@ -132,12 +133,17 @@ const includeSize = ref(false)
 const protectedOptions = [
   { label: '全部状态', value: '' },
   { label: '仅受保护', value: 'true' },
+  { label: '异常仓库', value: 'alert_repo' },
   { label: '仅正常', value: 'false' }
 ]
 
 function syncQueryToState() {
   repositorySearch.value = (route.query.search as string) || ''
-  protectedFilter.value = route.query.protected === 'true' ? 'true' : route.query.protected === 'false' ? 'false' : ''
+  if (route.query.alert_repo === 'true') {
+    protectedFilter.value = 'alert_repo'
+  } else {
+    protectedFilter.value = route.query.protected === 'true' ? 'true' : route.query.protected === 'false' ? 'false' : ''
+  }
   currentPage.value = Number(route.query.page) || 1
   pageSize.value = Number(route.query.page_size) || 10
   includeSize.value = route.query.include_size === 'true'
@@ -146,7 +152,11 @@ function syncQueryToState() {
 function syncStateToQuery() {
   const query: Record<string, string> = {}
   if (repositorySearch.value.trim()) query.search = repositorySearch.value.trim()
-  if (protectedFilter.value) query.protected = protectedFilter.value
+  if (protectedFilter.value === 'alert_repo') {
+    query.alert_repo = 'true'
+  } else if (protectedFilter.value) {
+    query.protected = protectedFilter.value
+  }
   if (currentPage.value > 1) query.page = String(currentPage.value)
   if (pageSize.value !== 10) query.page_size = String(pageSize.value)
   if (includeSize.value) query.include_size = 'true'
@@ -164,6 +174,7 @@ function buildFilterParams() {
   }
   if (protectedFilter.value === 'true') params.is_protected = true
   if (protectedFilter.value === 'false') params.is_protected = false
+  if (protectedFilter.value === 'alert_repo') params.has_repo_alerts = true
   return params
 }
 
@@ -176,6 +187,11 @@ function applyFilters() {
 
 function showProtectedOnly() {
   protectedFilter.value = 'true'
+  applyFilters()
+}
+
+function showAlertReposOnly() {
+  protectedFilter.value = 'alert_repo'
   applyFilters()
 }
 
@@ -236,10 +252,17 @@ const baseColumns = computed(() => {
       title: '状态',
       key: 'status',
       render: (row: any) => {
+        const tags: any[] = []
         if (row.is_protected) {
-          return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已保护' })
+          tags.push(h(NTag, { type: 'warning', size: 'small' }, { default: () => '已保护' }))
         }
-        return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })
+        if (row.has_repo_alerts) {
+          tags.push(h(NTag, { type: 'error', size: 'small' }, { default: () => '异常记录' }))
+        }
+        if (tags.length === 0) {
+          return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })
+        }
+        return h(NSpace, { size: 4 }, { default: () => tags })
       }
     }
   )

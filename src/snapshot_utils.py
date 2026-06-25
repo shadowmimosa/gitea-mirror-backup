@@ -13,14 +13,21 @@ def is_snapshot_protected(snapshot_path: Path) -> bool:
     return protection_marker_path(snapshot_path.parent, snapshot_path.name).exists()
 
 
+def clear_inline_protection_artifact(snapshot_path: Path) -> bool:
+    """仅移除快照目录内遗留的 .protected（误继承），不触碰侧车标记"""
+    inside = snapshot_path / ".protected"
+    if inside.exists():
+        inside.unlink()
+        return True
+    return False
+
+
 def clear_protection_markers(snapshot_path: Path) -> int:
     """清除指定快照的保护标记（侧车 + 目录内遗留）"""
     cleared = 0
-    inside = snapshot_path / ".protected"
-    sidecar = protection_marker_path(snapshot_path.parent, snapshot_path.name)
-    if inside.exists():
-        inside.unlink()
+    if clear_inline_protection_artifact(snapshot_path):
         cleared += 1
+    sidecar = protection_marker_path(snapshot_path.parent, snapshot_path.name)
     if sidecar.exists():
         sidecar.unlink()
         cleared += 1

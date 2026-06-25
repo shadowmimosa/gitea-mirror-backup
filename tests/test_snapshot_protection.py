@@ -131,7 +131,7 @@ class SnapshotProtectionTests(unittest.TestCase):
                 self.assertTrue((snap_dir / "20260625-155737.protected").exists())
                 self.assertFalse((snap / ".protected").exists())
 
-    def test_reconcile_clears_markers_without_alerts(self):
+    def test_reconcile_clears_inline_only_without_alerts(self):
         with patch("gitea_mirror_backup.logger", MagicMock()):
             with tempfile.TemporaryDirectory() as tmp:
                 snap_dir = Path(tmp) / "snapshots"
@@ -150,9 +150,9 @@ class SnapshotProtectionTests(unittest.TestCase):
                 with patch("gitea_mirror_backup.config", mock_config):
                     cleared = backup.reconcile_stale_protection()
 
-                self.assertEqual(cleared, 2)
+                self.assertEqual(cleared, 1)
                 self.assertFalse((snap / ".protected").exists())
-                self.assertFalse((snap_dir / "20260625-020004.protected").exists())
+                self.assertTrue((snap_dir / "20260625-020004.protected").exists())
 
 
 if __name__ == "__main__":

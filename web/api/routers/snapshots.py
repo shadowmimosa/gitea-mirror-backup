@@ -32,6 +32,7 @@ async def list_snapshots(
     page_size: int = 10,
     include_size: bool = False,
     is_protected: Optional[bool] = None,
+    has_repo_alerts: Optional[bool] = None,
     repository_search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
@@ -43,7 +44,8 @@ async def list_snapshots(
     - **page**: 页码（从 1 开始，默认 1）
     - **page_size**: 每页数量（默认 10）
     - **include_size**: 是否计算大小（默认 False，设为 True 会变慢）
-    - **is_protected**: 筛选受保护快照（true/false，不传则全部）
+    - **is_protected**: 筛选侧车标记的受保护快照（true/false，不传则全部）
+    - **has_repo_alerts**: 筛选存在 .alerts 异常记录的仓库快照
     - **repository_search**: 仓库名模糊搜索
     """
     snapshots = backup_service.get_snapshots(
@@ -52,6 +54,7 @@ async def list_snapshots(
         page_size=page_size,
         include_size=include_size,
         is_protected=is_protected,
+        has_repo_alerts=has_repo_alerts,
         repository_search=repository_search,
     )
     return snapshots
@@ -61,6 +64,7 @@ async def list_snapshots(
 async def count_snapshots(
     repository: Optional[str] = None,
     is_protected: Optional[bool] = None,
+    has_repo_alerts: Optional[bool] = None,
     repository_search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     backup_service: BackupService = Depends(get_backup_service),
@@ -70,11 +74,13 @@ async def count_snapshots(
 
     - **repository**: 仓库名称（可选，不指定则返回所有快照总数）
     - **is_protected**: 筛选受保护快照
+    - **has_repo_alerts**: 筛选存在异常记录的仓库
     - **repository_search**: 仓库名模糊搜索
     """
     count = backup_service.count_snapshots(
         repository=repository,
         is_protected=is_protected,
+        has_repo_alerts=has_repo_alerts,
         repository_search=repository_search,
     )
     return {"count": count}
