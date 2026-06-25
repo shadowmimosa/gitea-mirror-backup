@@ -248,6 +248,65 @@ class ConfigLoader:
 
         return current
 
+    def load_raw_yaml(self) -> Dict[str, Any]:
+        """从配置文件读取原始 YAML（不含环境变量覆盖）"""
+        if not self.config_path or not self.config_path.exists():
+            return self._deep_copy(self.DEFAULT_CONFIG)
+        with open(self.config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+
+    def save_raw_yaml(self, data: Dict[str, Any]) -> None:
+        """写回配置文件并重新加载"""
+        if not self.config_path:
+            raise ValueError("配置文件路径未设置")
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                data,
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+        self.config = self._load_config()
+
+    def update_backup_scope(
+        self, organizations: List[str], check_mirror_only: bool
+    ) -> None:
+        """更新备份范围（组织白名单与镜像仓开关）"""
+        data = self.load_raw_yaml()
+        backup = data.setdefault("backup", {})
+        backup["organizations"] = organizations
+        backup["check_mirror_only"] = check_mirror_only
+        self.save_raw_yaml(data)
+
+    def list_gitea_organizations(self) -> List[str]:
+        """扫描 Gitea 数据目录中的组织列表"""
+        data_volume = Path(self.get("gitea.data_volume", ""))
+        repos_rel = self.get("gitea.repos_path", "git/repositories")
+        repos_path = data_volume / repos_rel
+        if not repos_path.exists():
+            return []
+        return sorted(
+            [
+                d.name
+                for d in repos_path.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ]
+        )
+
+    def get_backup_scope_warnings(self) -> List[str]:
+        """环境变量覆盖备份范围配置时的提示"""
+        warnings: List[str] = []
+        if os.environ.get("BACKUP_ORGANIZATIONS"):
+            warnings.append(
+                "环境变量 BACKUP_ORGANIZATIONS 会覆盖配置文件中的 organizations"
+            )
+        if os.environ.get("BACKUP_CHECK_MIRROR_ONLY"):
+            warnings.append(
+                "环境变量 BACKUP_CHECK_MIRROR_ONLY 会覆盖配置文件中的 check_mirror_only"
+            )
+        return warnings
+
     def validate(self) -> List[str]:
         """
         验证配置

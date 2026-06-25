@@ -111,6 +111,14 @@ class Settings(BaseSettings):
             return env_dir
         return str(Path(self.WEB_DATA_DIR) / "task-logs")
 
+    def reload_config_loader(self) -> None:
+        """重新加载备份配置文件"""
+        try:
+            self._config_loader = ConfigLoader(self.BACKUP_CONFIG_PATH)
+        except Exception as e:
+            print(f"警告: 重新加载配置文件失败: {e}")
+            self._config_loader = None
+
 
 # 全局配置实例
 settings = Settings()

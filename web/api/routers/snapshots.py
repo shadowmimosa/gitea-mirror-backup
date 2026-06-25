@@ -2,6 +2,7 @@
 快照管理路由
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional
 
@@ -10,6 +11,8 @@ from ...utils.auth import get_current_user, get_current_admin_user
 from ..models import User
 from ..config import settings
 from ...services.backup_service import BackupService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/snapshots", tags=["快照管理"])
 
@@ -103,6 +106,7 @@ async def get_snapshot(
 async def delete_snapshot(
     snapshot_id: str,
     repository: str,
+    force: bool = False,
     current_user: User = Depends(get_current_admin_user),
     backup_service: BackupService = Depends(get_backup_service),
 ):
@@ -111,8 +115,8 @@ async def delete_snapshot(
 
     - **snapshot_id**: 快照 ID
     - **repository**: 仓库全名（格式：owner/repo）
+    - **force**: 强制删除受保护快照（需管理员二次确认，由前端保障）
     """
-    # 先查找快照是否存在
     snapshots = backup_service.get_snapshots(repository=repository)
     snapshot = next((s for s in snapshots if s["id"] == snapshot_id), None)
 
@@ -122,15 +126,14 @@ async def delete_snapshot(
             detail=f"快照 {snapshot_id} 不存在",
         )
 
-    # 检查是否受保护
-    if snapshot.get("is_protected", False):
+    is_protected = snapshot.get("is_protected", False)
+    if is_protected and not force:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"快照 {snapshot_id} 已被保护，无法删除",
+            detail=f"快照 {snapshot_id} 已被保护，无法删除（可使用 force=true 强制删除）",
         )
 
-    # 删除快照
-    success = backup_service.delete_snapshot(snapshot_id, repository)
+    success = backup_service.delete_snapshot(snapshot_id, repository, force=force)
 
     if not success:
         raise HTTPException(
@@ -138,4 +141,16 @@ async def delete_snapshot(
             detail="删除快照失败",
         )
 
-    return MessageResponse(message="快照已删除", detail=f"快照 ID: {snapshot_id}")
+    if is_protected and force:
+        logger.warning(
+            "管理员 %s 强制删除受保护快照: %s (%s)",
+            current_user.username,
+            snapshot_id,
+            repository,
+        )
+
+    detail = f"快照 ID: {snapshot_id}"
+    if is_protected and force:
+        detail += "（已强制删除受保护快照）"
+
+    return MessageResponse(message="快照已删除", detail=detail)

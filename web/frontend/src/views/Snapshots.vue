@@ -29,7 +29,7 @@
       <n-space v-if="authStore.isAdmin" style="margin-bottom: 12px;">
         <n-button
           type="error"
-          :disabled="selectedSnapshots.length === 0 || hasProtectedSelected || batchDeleting"
+          :disabled="selectedSnapshots.length === 0 || batchDeleting"
           :loading="batchDeleting"
           @click="handleBatchDelete"
         >
@@ -42,7 +42,7 @@
           正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
         </n-text>
         <n-text v-else-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
-          已选择的快照中包含受保护的快照，无法删除
+          选中项含受保护快照，批量删除时将要求二次确认
         </n-text>
       </n-space>
 
@@ -79,6 +79,15 @@
         </n-pagination>
       </div>
     </n-card>
+
+    <ForceDeleteSnapshotModal
+      v-model:show="showForceDeleteModal"
+      :snapshot-id="forceDeleteSnapshotId"
+      :repository="forceDeleteRepository"
+      :batch-count="forceDeleteBatchCount"
+      :loading="forceDeleteLoading"
+      @confirm="executeForceDelete"
+    />
   </div>
 </template>
 
@@ -94,6 +103,7 @@ import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 import RefreshButton from '@/components/RefreshButton.vue'
+import ForceDeleteSnapshotModal from '@/components/ForceDeleteSnapshotModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,6 +114,12 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const batchDeleting = ref(false)
 const batchProgress = ref({ current: 0, total: 0 })
+const showForceDeleteModal = ref(false)
+const forceDeleteLoading = ref(false)
+const forceDeleteSnapshotId = ref('')
+const forceDeleteRepository = ref('')
+const forceDeleteBatchCount = ref(1)
+const pendingForceDeletes = ref<Array<{ id: string; repository: string; is_protected?: boolean }>>([])
 const snapshots = ref<any[]>([])
 const selectedSnapshots = ref<string[]>([])
 const totalCount = ref(0)
@@ -181,8 +197,7 @@ const baseColumns = computed(() => {
   const cols: any[] = []
   if (authStore.isAdmin) {
     cols.push({
-      type: 'selection' as const,
-      disabled: (row: any) => row.is_protected
+      type: 'selection' as const
     })
   }
   cols.push(
@@ -234,7 +249,15 @@ const baseColumns = computed(() => {
       key: 'actions',
       render: (row: any) => {
         if (row.is_protected) {
-          return h(NButton, { size: 'small', type: 'error', disabled: true }, { default: () => '已保护' })
+          return h(
+            NButton,
+            {
+              size: 'small',
+              type: 'error',
+              onClick: () => openForceDeleteModal(row.id, row.repository)
+            },
+            { default: () => '强制删除' }
+          )
         }
         return h(
           NPopconfirm,
@@ -293,9 +316,49 @@ async function fetchSnapshots() {
   }
 }
 
+async function deleteSnapshot(id: string, repository: string, force = false) {
+  const params: Record<string, string | boolean> = {
+    repository,
+    force
+  }
+  await api.delete(`/snapshots/${id}`, { params })
+}
+
+function openForceDeleteModal(id: string, repository: string) {
+  forceDeleteSnapshotId.value = id
+  forceDeleteRepository.value = repository
+  forceDeleteBatchCount.value = 1
+  pendingForceDeletes.value = [{ id, repository, is_protected: true }]
+  showForceDeleteModal.value = true
+}
+
+async function executeForceDelete() {
+  forceDeleteLoading.value = true
+  const items = pendingForceDeletes.value
+  try {
+    for (const item of items) {
+      await deleteSnapshot(item.id, item.repository, item.is_protected ?? true)
+    }
+    const protectedCount = items.filter((item) => item.is_protected).length
+    if (items.length > 1) {
+      message.success(`已删除 ${items.length} 个快照（含 ${protectedCount} 个受保护）`)
+    } else {
+      message.success('强制删除成功')
+    }
+    showForceDeleteModal.value = false
+    pendingForceDeletes.value = []
+    selectedSnapshots.value = []
+    await fetchSnapshots()
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    forceDeleteLoading.value = false
+  }
+}
+
 async function handleDelete(id: string, repository: string) {
   try {
-    await api.delete(`/snapshots/${id}?repository=${encodeURIComponent(repository)}`)
+    await deleteSnapshot(id, repository)
     message.success('删除成功')
     await fetchSnapshots()
   } catch (error) {
@@ -306,6 +369,27 @@ async function handleDelete(id: string, repository: string) {
 async function handleBatchDelete() {
   if (selectedSnapshots.value.length === 0) return
 
+  const items = selectedSnapshots.value.map((rowKey) => {
+    const lastSlashIndex = (rowKey as string).lastIndexOf('/')
+    const repository = (rowKey as string).substring(0, lastSlashIndex)
+    const snapshotId = (rowKey as string).substring(lastSlashIndex + 1)
+    const snapshot = snapshots.value.find(
+      (s: any) => s.id === snapshotId && s.repository === repository
+    )
+    return { id: snapshotId, repository, is_protected: snapshot?.is_protected }
+  })
+
+  const protectedItems = items.filter((item) => item.is_protected)
+
+  if (protectedItems.length > 0) {
+    forceDeleteSnapshotId.value = protectedItems.length === 1 ? protectedItems[0].id : ''
+    forceDeleteRepository.value = protectedItems.length === 1 ? protectedItems[0].repository : ''
+    forceDeleteBatchCount.value = protectedItems.length
+    pendingForceDeletes.value = items
+    showForceDeleteModal.value = true
+    return
+  }
+
   dialog.warning({
     title: '批量删除确认',
     content: `确定要删除选中的 ${selectedSnapshots.value.length} 个快照吗？此操作不可恢复！`,
@@ -313,19 +397,13 @@ async function handleBatchDelete() {
     negativeText: '取消',
     onPositiveClick: async () => {
       batchDeleting.value = true
-      batchProgress.value = { current: 0, total: selectedSnapshots.value.length }
+      batchProgress.value = { current: 0, total: items.length }
       let successCount = 0
       let failCount = 0
 
-      for (const rowKey of selectedSnapshots.value) {
-        const lastSlashIndex = (rowKey as string).lastIndexOf('/')
-        if (lastSlashIndex === -1) continue
-
-        const repository = (rowKey as string).substring(0, lastSlashIndex)
-        const snapshotId = (rowKey as string).substring(lastSlashIndex + 1)
-
+      for (const item of items) {
         try {
-          await api.delete(`/snapshots/${snapshotId}?repository=${encodeURIComponent(repository)}`)
+          await deleteSnapshot(item.id, item.repository)
           successCount++
         } catch {
           failCount++

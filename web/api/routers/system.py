@@ -12,11 +12,18 @@ from ..models import User
 from ..schemas import (
     ConfigContentResponse,
     ConfigValidateResponse,
+    BackupScopeResponse,
+    BackupScopeUpdateRequest,
     NotificationTestRequest,
     NotificationTestResponse,
 )
+from ...services.config_service import ConfigService
 
 router = APIRouter(prefix="/system", tags=["系统信息"])
+
+
+def get_config_service() -> ConfigService:
+    return ConfigService(settings.BACKUP_CONFIG_PATH)
 
 
 @router.get("/info", summary="获取系统信息")
@@ -52,6 +59,50 @@ async def validate_backup_config(
 
     errors = loader.validate()
     return ConfigValidateResponse(valid=len(errors) == 0, errors=errors)
+
+
+@router.get(
+    "/backup-scope",
+    response_model=BackupScopeResponse,
+    summary="获取备份范围配置",
+)
+async def get_backup_scope(
+    current_admin: User = Depends(get_current_admin_user),
+    config_service: ConfigService = Depends(get_config_service),
+):
+    """获取组织白名单与镜像仓开关（配置文件中的值）"""
+    config_path = Path(settings.BACKUP_CONFIG_PATH)
+    if not config_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"配置文件不存在: {config_path}",
+        )
+    return config_service.get_backup_scope()
+
+
+@router.put(
+    "/backup-scope",
+    response_model=BackupScopeResponse,
+    summary="更新备份范围配置",
+)
+async def update_backup_scope(
+    body: BackupScopeUpdateRequest,
+    current_admin: User = Depends(get_current_admin_user),
+    config_service: ConfigService = Depends(get_config_service),
+):
+    """写入 config.yaml，下次全量备份任务生效"""
+    config_path = Path(settings.BACKUP_CONFIG_PATH)
+    if not config_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"配置文件不存在: {config_path}",
+        )
+    result = config_service.update_backup_scope(
+        organizations=body.organizations,
+        check_mirror_only=body.check_mirror_only,
+    )
+    settings.reload_config_loader()
+    return result
 
 
 @router.post(

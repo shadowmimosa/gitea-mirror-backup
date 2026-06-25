@@ -37,6 +37,51 @@
             </n-space>
           </n-tab-pane>
 
+          <n-tab-pane v-if="authStore.isAdmin" name="backup-scope" tab="备份范围">
+            <n-space vertical>
+              <n-alert type="info" :show-icon="false">
+                组织列表为空时备份全部组织；修改后于下次全量备份任务生效。单仓「立即备份」不受此限制。
+              </n-alert>
+              <n-alert
+                v-for="(warning, index) in backupScope.warnings"
+                :key="index"
+                type="warning"
+                :show-icon="false"
+              >
+                {{ warning }}
+              </n-alert>
+              <n-form label-placement="left" label-width="140">
+                <n-form-item label="备份组织">
+                  <n-select
+                    v-model:value="backupScope.organizations"
+                    :options="organizationOptions"
+                    multiple
+                    filterable
+                    tag
+                    placeholder="留空表示备份全部组织"
+                    style="width: 100%; max-width: 520px;"
+                  />
+                </n-form-item>
+                <n-form-item label="仅备份镜像仓">
+                  <n-switch v-model:value="backupScope.check_mirror_only" />
+                </n-form-item>
+                <n-form-item v-if="backupScope.effective_organizations?.length" label="当前生效组织">
+                  <n-text depth="3">{{ backupScope.effective_organizations.join(', ') }}</n-text>
+                </n-form-item>
+                <n-form-item label="当前生效镜像过滤">
+                  <n-text depth="3">
+                    {{ backupScope.effective_check_mirror_only ? '是' : '否' }}
+                  </n-text>
+                </n-form-item>
+                <n-form-item>
+                  <n-button type="primary" :loading="backupScopeSaving" @click="saveBackupScope">
+                    保存备份范围
+                  </n-button>
+                </n-form-item>
+              </n-form>
+            </n-space>
+          </n-tab-pane>
+
           <n-tab-pane v-if="authStore.isAdmin" name="config" tab="备份配置">
             <n-space vertical>
               <n-alert type="info" :show-icon="false">只读展示当前 config.yaml，修改后需重启服务生效。</n-alert>
@@ -100,10 +145,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
+import { ref, h, onMounted, computed } from 'vue'
 import {
   NCard, NTabs, NTabPane, NForm, NFormItem, NInput, NSpace, NAlert,
-  NButton, NDataTable, NTag, NSpin, NModal, useMessage
+  NButton, NDataTable, NTag, NSpin, NModal, useMessage, NSelect, NSwitch, NText
 } from 'naive-ui'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
@@ -138,6 +183,22 @@ const configContent = ref('')
 const validateLoading = ref(false)
 const validateResult = ref<{ valid: boolean; errors: string[] } | null>(null)
 const notifyLoading = ref('')
+const backupScope = ref({
+  organizations: [] as string[],
+  check_mirror_only: false,
+  available_organizations: [] as string[],
+  effective_organizations: [] as string[],
+  effective_check_mirror_only: false,
+  warnings: [] as string[]
+})
+const backupScopeSaving = ref(false)
+
+const organizationOptions = computed(() =>
+  backupScope.value.available_organizations.map((org) => ({
+    label: org,
+    value: org
+  }))
+)
 
 const userColumns = [
   { title: '用户名', key: 'username' },
@@ -189,6 +250,33 @@ async function fetchUsers() {
     message.error(getApiErrorMessage(error))
   } finally {
     usersLoading.value = false
+  }
+}
+
+async function fetchBackupScope() {
+  if (!authStore.isAdmin) return
+  try {
+    const response = await api.get('/system/backup-scope')
+    backupScope.value = response.data
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  }
+}
+
+async function saveBackupScope() {
+  backupScopeSaving.value = true
+  try {
+    const response = await api.put('/system/backup-scope', {
+      organizations: backupScope.value.organizations,
+      check_mirror_only: backupScope.value.check_mirror_only
+    })
+    backupScope.value = response.data
+    message.success('备份范围已保存，下次全量备份生效')
+    await fetchConfig()
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    backupScopeSaving.value = false
   }
 }
 
@@ -278,7 +366,7 @@ async function testNotification(channel: string) {
 onMounted(async () => {
   loading.value = true
   await fetchAppInfo()
-  await Promise.all([fetchUsers(), fetchConfig()])
+  await Promise.all([fetchUsers(), fetchConfig(), fetchBackupScope()])
   loading.value = false
 })
 </script>

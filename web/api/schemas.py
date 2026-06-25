@@ -172,6 +172,25 @@ class ConfigValidateResponse(BaseModel):
     errors: list[str] = []
 
 
+class BackupScopeResponse(BaseModel):
+    """备份范围配置"""
+
+    organizations: list[str] = []
+    check_mirror_only: bool = False
+    available_organizations: list[str] = []
+    effective_organizations: list[str] = []
+    effective_check_mirror_only: bool = False
+    warnings: list[str] = []
+    config_path: str
+
+
+class BackupScopeUpdateRequest(BaseModel):
+    """更新备份范围"""
+
+    organizations: list[str] = []
+    check_mirror_only: bool = False
+
+
 class NotificationTestRequest(BaseModel):
     """通知测试请求"""
 

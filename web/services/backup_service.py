@@ -479,13 +479,16 @@ class BackupService:
             "repository": repository,
         }
 
-    def delete_snapshot(self, snapshot_id: str, repository: str) -> bool:
+    def delete_snapshot(
+        self, snapshot_id: str, repository: str, force: bool = False
+    ) -> bool:
         """
         删除快照
 
         Args:
             snapshot_id: 快照 ID（时间戳格式，如 20250126-120000）
             repository: 仓库全名 "owner/repo"
+            force: 管理员强制删除受保护快照
 
         Returns:
             是否成功
@@ -502,12 +505,15 @@ class BackupService:
         if not snapshot_path.exists() or not snapshot_path.is_dir():
             return False
 
-        # 检查是否受保护
-        if is_snapshot_protected(snapshot_path):
-            return False  # 不允许删除受保护的快照
+        if is_snapshot_protected(snapshot_path) and not force:
+            return False
 
         try:
             import shutil
+            from src.snapshot_utils import clear_protection_markers
+
+            if force:
+                clear_protection_markers(snapshot_path)
 
             shutil.rmtree(snapshot_path)
             return True
