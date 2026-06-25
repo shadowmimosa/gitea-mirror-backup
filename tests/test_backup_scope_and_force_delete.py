@@ -80,5 +80,30 @@ class TestForceDeleteSnapshot(unittest.TestCase):
             self.assertFalse(protection_marker_path(snapshot_path.parent, snap_id).exists())
 
 
+    def test_get_snapshot_by_id_skips_pagination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backup_root = Path(tmp) / "backup"
+            owner, repo = "org", "demo"
+            snap_id = "20260613-020006"
+            snapshot_path = backup_root / owner / repo / "snapshots" / snap_id
+            snapshot_path.mkdir(parents=True)
+
+            # 造 15 个快照，目标 ID 不在默认分页第一页
+            snap_dir = backup_root / owner / repo / "snapshots"
+            for i in range(15):
+                (snap_dir / f"20260625-{i:06d}").mkdir(exist_ok=True)
+
+            config_path = Path(tmp) / "config.yaml"
+            config_path.write_text(f"backup:\n  root: {backup_root}\n", encoding="utf-8")
+
+            service = BackupService(str(backup_root), str(config_path))
+            page = service.get_snapshots(repository=f"{owner}/{repo}", page=1, page_size=10)
+            self.assertNotIn(snap_id, [s["id"] for s in page])
+
+            found = service.get_snapshot_by_id(snap_id, repository=f"{owner}/{repo}")
+            self.assertIsNotNone(found)
+            self.assertEqual(found["id"], snap_id)
+
+
 if __name__ == "__main__":
     unittest.main()

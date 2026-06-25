@@ -97,8 +97,7 @@ async def get_snapshot(
 
     - **snapshot_id**: 快照 ID
     """
-    snapshots = backup_service.get_snapshots()
-    snapshot = next((s for s in snapshots if s["id"] == snapshot_id), None)
+    snapshot = backup_service.get_snapshot_by_id(snapshot_id)
 
     if not snapshot:
         raise HTTPException(
@@ -123,8 +122,7 @@ async def delete_snapshot(
     - **repository**: 仓库全名（格式：owner/repo）
     - **force**: 强制删除受保护快照（需管理员二次确认，由前端保障）
     """
-    snapshots = backup_service.get_snapshots(repository=repository)
-    snapshot = next((s for s in snapshots if s["id"] == snapshot_id), None)
+    snapshot = backup_service.get_snapshot_by_id(snapshot_id, repository=repository)
 
     if not snapshot:
         raise HTTPException(

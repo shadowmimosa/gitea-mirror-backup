@@ -500,6 +500,38 @@ class BackupService:
             "repository": repository,
         }
 
+    def get_snapshot_by_id(
+        self, snapshot_id: str, repository: Optional[str] = None
+    ) -> Optional[Dict]:
+        """按 ID 查找单个快照（不走分页，直接读磁盘）"""
+        if repository:
+            parts = repository.split("/", 1)
+            if len(parts) != 2:
+                return None
+            owner, repo_name = parts
+            repo_dir = self.backup_base_path / owner / repo_name
+            if not repo_dir.is_dir():
+                return None
+            snapshot_path = repo_dir / "snapshots" / snapshot_id
+            if not snapshot_path.is_dir():
+                return None
+            matches = self._get_repo_snapshots_basic(owner, repo_name, repo_dir)
+            match = next((s for s in matches if s["id"] == snapshot_id), None)
+        else:
+            match = None
+            for basic in self._collect_snapshot_basics():
+                if basic["id"] == snapshot_id:
+                    match = basic
+                    break
+
+        if not match:
+            return None
+
+        result = dict(match)
+        result.pop("_path", None)
+        result.setdefault("size", 0)
+        return result
+
     def delete_snapshot(
         self, snapshot_id: str, repository: str, force: bool = False
     ) -> bool:
