@@ -29,7 +29,7 @@ def get_backup_service() -> BackupService:
 
 def _get_recent_logs(repository: str, limit: int = 20) -> List[str]:
     """从 Web 任务日志中提取与仓库相关的最近日志行"""
-    log_dir = Path(settings.BACKUP_ROOT) / "web-task-logs"
+    log_dir = Path(settings.TASK_LOG_DIR)
     if not log_dir.exists():
         return []
 

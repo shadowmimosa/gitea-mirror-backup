@@ -15,7 +15,6 @@ from ..api.models import Task, TaskRun, User
 
 
 MANUAL_TASK_NAME = "manual-backup"
-LOG_DIR_NAME = "web-task-logs"
 
 
 class TaskService:
@@ -23,7 +22,7 @@ class TaskService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.log_dir = Path(settings.BACKUP_ROOT) / LOG_DIR_NAME
+        self.log_dir = Path(settings.TASK_LOG_DIR)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
     def get_or_create_manual_task(self) -> Task:

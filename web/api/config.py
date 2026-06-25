@@ -93,6 +93,24 @@ class Settings(BaseSettings):
         """兼容旧代码：BACKUP_BASE_PATH 指向 BACKUP_ROOT"""
         return self.BACKUP_ROOT
 
+    @property
+    def WEB_DATA_DIR(self) -> str:
+        """Web 应用可写数据目录（SQLite、任务日志等）"""
+        if "sqlite" in self.DATABASE_URL:
+            db_path = Path(self.DATABASE_URL.replace("sqlite:///", ""))
+            if not db_path.is_absolute():
+                db_path = (Path.cwd() / db_path).resolve()
+            return str(db_path.parent)
+        return str((Path.cwd() / "data").resolve())
+
+    @property
+    def TASK_LOG_DIR(self) -> str:
+        """Web 触发的备份任务日志目录（须在可写卷上，不能放在只读 BACKUP_ROOT）"""
+        env_dir = os.environ.get("WEB_TASK_LOG_DIR")
+        if env_dir:
+            return env_dir
+        return str(Path(self.WEB_DATA_DIR) / "task-logs")
+
 
 # 全局配置实例
 settings = Settings()
