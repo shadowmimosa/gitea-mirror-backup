@@ -468,20 +468,13 @@ class BackupService:
 
     def trigger_backup(self, repository: Optional[str] = None) -> Dict:
         """
-        触发备份任务
-
-        Args:
-            repository: 仓库名称（可选，不指定则备份所有仓库）
-
-        Returns:
-            任务信息
+        触发备份任务（由 TaskService 实际执行，此处保留兼容接口）
         """
-        # 这里应该调用主备份脚本
-        # 暂时返回模拟数据
         return {
-            "task_id": "backup-" + datetime.now().strftime("%Y%m%d-%H%M%S"),
-            "status": "running",
+            "task_id": "deprecated",
+            "status": "pending",
             "started_at": datetime.now(),
+            "repository": repository,
         }
 
     def delete_snapshot(self, snapshot_id: str, repository: str) -> bool:

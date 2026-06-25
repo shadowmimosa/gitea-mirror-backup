@@ -43,7 +43,7 @@
       </n-form>
 
       <div class="login-footer">
-        <p>默认账号: admin / admin123</p>
+        <p>首次部署请使用环境变量配置的账号登录，并尽快修改密码。</p>
       </div>
     </div>
   </div>
@@ -54,6 +54,7 @@ import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage, NForm, NFormItem, NInput, NButton } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
+import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const router = useRouter()
 const route = useRoute()
@@ -95,6 +96,7 @@ async function handleLogin() {
       message.error('用户名或密码错误')
     }
   } catch (error) {
+    message.error(getApiErrorMessage(error))
     console.error('Login error:', error)
   } finally {
     loading.value = false
@@ -198,4 +200,3 @@ async function handleLogin() {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 </style>
-

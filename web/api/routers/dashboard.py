@@ -2,8 +2,12 @@
 仪表板路由
 """
 
-from fastapi import APIRouter, Depends
+import json
+from pathlib import Path
+from collections import defaultdict
 from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends
 
 from ..schemas import DashboardStats, DashboardTrend
 from ...utils.auth import get_current_user
@@ -61,6 +65,70 @@ def get_backup_stats(backup_service: BackupService) -> dict:
     return stats
 
 
+def _load_trends_from_reports(backup_root: Path, days: int) -> list[DashboardTrend]:
+    """从报告 meta 文件解析趋势数据"""
+    reports_dir = backup_root / "reports"
+    daily: dict[str, dict] = defaultdict(
+        lambda: {"success_count": 0, "failed_count": 0, "disk_usage": 0}
+    )
+
+    if reports_dir.exists():
+        for meta_file in reports_dir.glob("report-*.md.meta.json"):
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                date_str = meta.get("date") or meta_file.stem.split(".")[0].replace(
+                    "report-", ""
+                )[:10]
+                if len(date_str) >= 10:
+                    date_str = date_str[:10]
+                has_alerts = bool(meta.get("has_alerts"))
+                if has_alerts:
+                    daily[date_str]["failed_count"] += 1
+                else:
+                    daily[date_str]["success_count"] += 1
+                disk = meta.get("total_disk_usage") or meta.get("disk_usage") or 0
+                if disk:
+                    daily[date_str]["disk_usage"] = max(daily[date_str]["disk_usage"], disk)
+            except Exception:
+                continue
+
+        # 无 meta 时从报告文件名推断日期
+        for report_file in reports_dir.glob("report-*.md"):
+            meta_file = report_file.with_suffix(".md.meta.json")
+            if meta_file.exists():
+                continue
+            try:
+                name = report_file.stem  # report-20260124
+                if name.startswith("report-") and len(name) >= 15:
+                    date_str = name[7:15]
+                    if len(date_str) == 8:
+                        date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+                    content_head = report_file.read_text(encoding="utf-8")[:2048]
+                    has_alerts = "需要关注的仓库" in content_head
+                    if has_alerts:
+                        daily[date_str]["failed_count"] += 1
+                    else:
+                        daily[date_str]["success_count"] += 1
+            except Exception:
+                continue
+
+    trends = []
+    for i in range(days):
+        date = datetime.now() - timedelta(days=days - i - 1)
+        date_str = date.strftime("%Y-%m-%d")
+        data = daily.get(date_str, {"success_count": 0, "failed_count": 0, "disk_usage": 0})
+        trends.append(
+            DashboardTrend(
+                date=date_str,
+                success_count=data["success_count"],
+                failed_count=data["failed_count"],
+                disk_usage=data["disk_usage"],
+            )
+        )
+
+    return trends
+
+
 @router.get("/stats", response_model=DashboardStats, summary="获取仪表板统计数据")
 async def get_stats(
     current_user: User = Depends(get_current_user),
@@ -82,22 +150,15 @@ async def get_stats(
 
 
 @router.get("/trends", response_model=list[DashboardTrend], summary="获取趋势数据")
-async def get_trends(days: int = 7, current_user: User = Depends(get_current_user)):
+async def get_trends(
+    days: int = 7,
+    current_user: User = Depends(get_current_user),
+    backup_service: BackupService = Depends(get_backup_service),
+):
     """
     获取趋势数据
 
     - **days**: 天数（默认7天）
     """
-    trends = []
-
-    # 生成最近N天的数据
-    for i in range(days):
-        date = datetime.now() - timedelta(days=days - i - 1)
-        date_str = date.strftime("%Y-%m-%d")
-
-        # 这里简化处理，实际应该从日志或数据库读取
-        trends.append(
-            DashboardTrend(date=date_str, success_count=0, failed_count=0, disk_usage=0)
-        )
-
-    return trends
+    backup_root = Path(settings.BACKUP_BASE_PATH)
+    return _load_trends_from_reports(backup_root, days)

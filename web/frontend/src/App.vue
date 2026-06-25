@@ -1,6 +1,7 @@
 <template>
   <n-config-provider :theme="darkTheme" :theme-overrides="themeOverrides">
     <n-message-provider>
+      <MessageSetup />
       <n-notification-provider>
         <n-dialog-provider>
           <router-view />
@@ -12,6 +13,7 @@
 
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, NNotificationProvider, NDialogProvider, darkTheme } from 'naive-ui'
+import MessageSetup from '@/components/MessageSetup.vue'
 
 const themeOverrides = {
   common: {

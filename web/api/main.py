@@ -20,6 +20,7 @@ from .routers import (
     reports_router,
     system_router,
     restore_router,
+    tasks_router,
 )
 from ..utils.auth import get_password_hash
 
@@ -102,6 +103,7 @@ app.include_router(snapshots_router, prefix=settings.API_PREFIX)
 app.include_router(reports_router, prefix=settings.API_PREFIX)
 app.include_router(restore_router, prefix=settings.API_PREFIX)
 app.include_router(system_router, prefix=settings.API_PREFIX)
+app.include_router(tasks_router, prefix=settings.API_PREFIX)
 
 
 # 挂载前端静态文件（生产环境）

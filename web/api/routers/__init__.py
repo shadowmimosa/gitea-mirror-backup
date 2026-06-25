@@ -9,6 +9,7 @@ from .snapshots import router as snapshots_router
 from .reports import router as reports_router
 from .restore import router as restore_router
 from .system import router as system_router
+from .tasks import router as tasks_router
 
 __all__ = [
     "auth_router",
@@ -18,4 +19,5 @@ __all__ = [
     "reports_router",
     "restore_router",
     "system_router",
+    "tasks_router",
 ]

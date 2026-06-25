@@ -2,7 +2,7 @@
 数据库连接和会话管理
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
@@ -46,3 +46,19 @@ def get_db() -> Generator[Session, None, None]:
 def init_db():
     """初始化数据库"""
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
+
+
+def _migrate_schema():
+    """轻量 schema 迁移（SQLite）"""
+    if "sqlite" not in settings.DATABASE_URL:
+        return
+
+    with engine.connect() as conn:
+        try:
+            conn.execute(
+                text("ALTER TABLE task_runs ADD COLUMN repository VARCHAR(255)")
+            )
+            conn.commit()
+        except Exception:
+            pass

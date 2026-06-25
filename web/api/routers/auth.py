@@ -3,12 +3,21 @@
 """
 
 from datetime import timedelta
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import User
-from ..schemas import LoginRequest, Token, UserResponse, UserCreate
+from ..schemas import (
+    LoginRequest,
+    Token,
+    UserResponse,
+    UserCreate,
+    PasswordChangeRequest,
+    UserAdminUpdate,
+    MessageResponse,
+)
 from ...utils.auth import (
     verify_password,
     get_password_hash,
@@ -101,3 +110,60 @@ async def register(
     db.refresh(new_user)
 
     return new_user
+
+
+@router.get("/users", response_model=List[UserResponse], summary="获取用户列表")
+async def list_users(
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin_user),
+):
+    """获取所有用户（仅管理员）"""
+    return db.query(User).order_by(User.created_at.desc()).all()
+
+
+@router.put("/users/{user_id}", response_model=UserResponse, summary="更新用户")
+async def update_user(
+    user_id: int,
+    user_data: UserAdminUpdate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin_user),
+):
+    """管理员更新用户信息"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    if user_data.email is not None:
+        user.email = user_data.email
+    if user_data.password is not None:
+        user.hashed_password = get_password_hash(user_data.password)
+    if user_data.is_active is not None:
+        user.is_active = user_data.is_active
+    if user_data.is_admin is not None:
+        if user.id == current_admin.id and not user_data.is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="不能取消自己的管理员权限",
+            )
+        user.is_admin = user_data.is_admin
+
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/change-password", response_model=MessageResponse, summary="修改密码")
+async def change_password(
+    body: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """当前用户修改自己的密码"""
+    if not verify_password(body.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码错误"
+        )
+
+    current_user.hashed_password = get_password_hash(body.new_password)
+    db.commit()
+    return MessageResponse(message="密码修改成功")

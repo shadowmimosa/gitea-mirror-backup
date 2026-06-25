@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # 备份配置路径
     BACKUP_CONFIG_PATH: str = "/app/config.yaml"
+    BACKUP_SCRIPT_PATH: str = str(project_root / "gitea_mirror_backup.py")
 
     # 日志配置
     LOG_LEVEL: str = "INFO"

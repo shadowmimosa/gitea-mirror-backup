@@ -1,5 +1,7 @@
 <template>
   <div class="reports">
+    <PageBreadcrumb :items="[{ label: '报告查看' }]" />
+
     <n-card title="报告列表">
       <template #header-extra>
         <n-space>
@@ -17,7 +19,14 @@
         </n-space>
       </template>
 
+      <n-empty
+        v-if="!loading && filteredReports.length === 0"
+        description="暂无备份报告"
+        style="margin: 24px 0;"
+      />
+
       <n-data-table
+        v-else
         :columns="columns"
         :data="filteredReports"
         :loading="loading"
@@ -25,30 +34,39 @@
       />
     </n-card>
 
-    <n-modal 
-      v-model:show="showModal" 
-      preset="card" 
-      :title="currentReport?.filename || '报告详情'" 
+    <n-modal
+      v-model:show="showModal"
+      preset="card"
+      :title="currentReport?.filename || '报告详情'"
       style="width: 90%; max-width: 1200px;"
     >
-      <n-scrollbar style="max-height: 75vh;">
-        <div v-html="renderedContent" class="markdown-body"></div>
-      </n-scrollbar>
+      <n-spin :show="contentLoading">
+        <n-scrollbar style="max-height: 75vh;">
+          <div v-html="renderedContent" class="markdown-body"></div>
+        </n-scrollbar>
+      </n-spin>
     </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
-import { NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, NSpace, NRadioGroup, NRadioButton, useMessage } from 'naive-ui'
+import {
+  NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, NSpace,
+  NRadioGroup, NRadioButton, NSpin, NEmpty, useMessage
+} from 'naive-ui'
 import { RefreshOutline, DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import 'github-markdown-css/github-markdown-dark.css'
 import api from '@/api/client'
+import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
+import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const message = useMessage()
 
 const loading = ref(false)
+const contentLoading = ref(false)
 const reports = ref<any[]>([])
 const statusFilter = ref<'all' | 'normal' | 'alert'>('all')
 const showModal = ref(false)
@@ -67,14 +85,10 @@ const columns = [
     title: '报告文件',
     key: 'filename',
     render: (row: any) => {
-      return h(
-        'div',
-        { style: 'display: flex; align-items: center; gap: 8px;' },
-        [
-          h(NIcon, { size: 20 }, { default: () => h(DocumentTextOutline) }),
-          h('span', row.filename)
-        ]
-      )
+      return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+        h(NIcon, { size: 20 }, { default: () => h(DocumentTextOutline) }),
+        h('span', row.filename)
+      ])
     }
   },
   {
@@ -93,10 +107,10 @@ const columns = [
     render: (row: any) => {
       const isAlert = row.has_alerts || row.is_protected || row.status === 'alert'
       if (isAlert) {
-        const label = row.is_protected ? '🔒 异常保留' : '异常保留'
-        return h(NTag, { type: 'warning' }, { default: () => label })
+        const label = row.is_protected ? '异常保留' : '异常保留'
+        return h(NTag, { type: 'warning', size: 'small' }, { default: () => label })
       }
-      return h(NTag, { type: 'success' }, { default: () => '正常' })
+      return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })
     }
   },
   {
@@ -105,11 +119,7 @@ const columns = [
     render: (row: any) => {
       return h(
         NButton,
-        {
-          size: 'small',
-          type: 'primary',
-          onClick: () => viewReport(row)
-        },
+        { size: 'small', type: 'primary', onClick: () => viewReport(row) },
         {
           icon: () => h(NIcon, null, { default: () => h(EyeOutline) }),
           default: () => '查看'
@@ -119,17 +129,16 @@ const columns = [
   }
 ]
 
-const pagination = {
-  pageSize: 10
-}
+const pagination = { pageSize: 10 }
 
 const renderedContent = computed(() => {
   if (!currentReport.value?.content) return ''
   try {
-    return marked.parse(currentReport.value.content)
+    const html = marked.parse(currentReport.value.content) as string
+    return DOMPurify.sanitize(html)
   } catch (error) {
     console.error('Markdown 渲染失败:', error)
-    return '<pre>' + currentReport.value.content + '</pre>'
+    return DOMPurify.sanitize(`<pre>${currentReport.value.content}</pre>`)
   }
 })
 
@@ -139,21 +148,24 @@ async function fetchReports() {
     const response = await api.get('/reports')
     reports.value = response.data
   } catch (error) {
-    message.error('获取报告列表失败')
-    console.error(error)
+    message.error(getApiErrorMessage(error))
   } finally {
     loading.value = false
   }
 }
 
 async function viewReport(report: any) {
+  showModal.value = true
+  contentLoading.value = true
+  currentReport.value = null
   try {
     const response = await api.get(`/reports/${report.filename}`)
     currentReport.value = response.data
-    showModal.value = true
   } catch (error) {
-    message.error('获取报告详情失败')
-    console.error(error)
+    message.error(getApiErrorMessage(error))
+    showModal.value = false
+  } finally {
+    contentLoading.value = false
   }
 }
 
@@ -182,7 +194,6 @@ onMounted(() => {
   color: inherit;
 }
 
-/* 适配暗色主题 */
 .markdown-body table {
   border-color: rgba(255, 255, 255, 0.09);
 }
@@ -205,4 +216,3 @@ onMounted(() => {
   background-color: rgba(255, 255, 255, 0.06);
 }
 </style>
-

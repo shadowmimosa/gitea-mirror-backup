@@ -118,9 +118,71 @@ class TaskRunResponse(BaseModel):
     finished_at: Optional[datetime] = None
     log_file: Optional[str] = None
     error_message: Optional[str] = None
+    repository: Optional[str] = None
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class TaskRunListResponse(BaseModel):
+    """任务列表响应"""
+
+    items: list[TaskRunResponse]
+    total: int
+
+
+class BackupTriggerResponse(BaseModel):
+    """备份触发响应"""
+
+    task_run_id: int
+    status: str
+    already_running: bool = False
+    repository: Optional[str] = None
+    message: str
+
+
+class PasswordChangeRequest(BaseModel):
+    """修改密码请求"""
+
+    password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=6)
+
+
+class UserAdminUpdate(BaseModel):
+    """管理员更新用户"""
+
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=6)
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+class ConfigContentResponse(BaseModel):
+    """配置内容响应"""
+
+    content: str
+    path: str
+
+
+class ConfigValidateResponse(BaseModel):
+    """配置校验响应"""
+
+    valid: bool
+    errors: list[str] = []
+
+
+class NotificationTestRequest(BaseModel):
+    """通知测试请求"""
+
+    channel: str = Field(..., description="email, webhook, wechat, dingtalk")
+
+
+class NotificationTestResponse(BaseModel):
+    """通知测试响应"""
+
+    success: bool
+    message: str
 
 
 # ============ 配置相关 ============
