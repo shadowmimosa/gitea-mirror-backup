@@ -98,9 +98,61 @@ class SnapshotProtectionTests(unittest.TestCase):
             self.assertIsNone(result)
             protect_mock.assert_not_called()
             self.assertFalse((current / ".protected").exists())
+            self.assertFalse((snap_dir / "20260625-154615.protected").exists())
             self.assertEqual(
                 (backup.backup_dir / ".commit_tracking").read_text(), "139"
             )
+
+    def test_strip_inline_protection_on_new_snapshot(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                snap = snap_dir / "20260625-155737"
+                snap.mkdir()
+                (snap / ".protected").write_text("inherited")
+
+                backup = self._make_backup(snap_dir)
+                removed = backup._strip_inline_protection_artifact(snap)
+                self.assertTrue(removed)
+                self.assertFalse((snap / ".protected").exists())
+
+    def test_protect_snapshot_uses_sidecar_not_inline(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                snap = snap_dir / "20260625-155737"
+                snap.mkdir()
+
+                backup = self._make_backup(snap_dir)
+                backup.protect_snapshot(snap, ["测试异常"])
+
+                self.assertTrue((snap_dir / "20260625-155737.protected").exists())
+                self.assertFalse((snap / ".protected").exists())
+
+    def test_reconcile_clears_markers_without_alerts(self):
+        with patch("gitea_mirror_backup.logger", MagicMock()):
+            with tempfile.TemporaryDirectory() as tmp:
+                snap_dir = Path(tmp) / "snapshots"
+                snap_dir.mkdir(parents=True)
+                snap = snap_dir / "20260625-020004"
+                snap.mkdir()
+                (snap / ".protected").write_text("legacy")
+                (snap_dir / "20260625-020004.protected").write_text("sidecar")
+
+                backup = self._make_backup(snap_dir)
+                backup.backup_dir.mkdir(parents=True, exist_ok=True)
+
+                mock_config = MagicMock()
+                mock_config.BACKUP_ROOT = str(Path(tmp))
+
+                with patch("gitea_mirror_backup.config", mock_config):
+                    cleared = backup.reconcile_stale_protection()
+
+                self.assertEqual(cleared, 2)
+                self.assertFalse((snap / ".protected").exists())
+                self.assertFalse((snap_dir / "20260625-020004.protected").exists())
 
 
 if __name__ == "__main__":

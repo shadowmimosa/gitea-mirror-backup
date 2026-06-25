@@ -24,6 +24,12 @@ except ImportError:
     print("请确保 src/config_loader.py 存在")
     sys.exit(1)
 
+from src.snapshot_utils import (
+    clear_protection_markers,
+    is_snapshot_protected,
+    protection_marker_path,
+)
+
 # 导入通知系统（可选）
 try:
     from src.notifier import NotificationManager
@@ -33,7 +39,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.2"
+BACKUP_SCRIPT_VERSION = "1.3.3"
 
 
 # ============ 日志配置 ============
@@ -245,6 +251,25 @@ class RepositoryBackup:
         logger.info(f"    ✓ 将备份 {self.full_name}")
         return True
 
+    def _strip_source_protection_artifact(self) -> bool:
+        """源仓库若被误写入 .protected，cp -al 会让每个新快照硬链接继承"""
+        inline = self.repo_path / ".protected"
+        if inline.exists():
+            logger.warning(
+                f"  ⚠️ 源仓库存在非标准文件 .protected，已移除: {self.repo_path}"
+            )
+            inline.unlink()
+            return True
+        return False
+
+    def _strip_inline_protection_artifact(self, snapshot_path: Path) -> bool:
+        """移除快照目录内不应存在的 .protected（仅侧车文件才表示受保护）"""
+        inline = snapshot_path / ".protected"
+        if inline.exists():
+            inline.unlink()
+            return True
+        return False
+
     def create_snapshot(self) -> Optional[Path]:
         """创建快照，返回快照路径"""
         try:
@@ -256,6 +281,8 @@ class RepositoryBackup:
             logger.info(f"  创建快照目录: {self.snapshot_dir}")
 
             logger.info(f"  创建快照: {self.full_name}")
+
+            self._strip_source_protection_artifact()
 
             # 尝试使用硬链接创建快照 (cp -al)，如果失败则使用普通复制
             result = run_command(
@@ -278,6 +305,11 @@ class RepositoryBackup:
                     logger.error(f"  ✗ 快照失败: {self.full_name}")
                     logger.error(f"  错误: {result.stderr}")
                     return None
+
+            if self._strip_inline_protection_artifact(snapshot_path):
+                logger.warning(
+                    f"  ⚠️ 新快照 {date_stamp} 从源仓库继承了 .protected，已自动移除"
+                )
 
             # 获取当前提交数
             current_commits = get_commit_count(self.repo_path)
@@ -314,6 +346,7 @@ class RepositoryBackup:
             commit_tracking_file.write_text(str(current_commits))
             size_tracking_file.write_text(str(current_size))
             logger.info(f"  初始提交数: {current_commits}, 大小: {current_size}KB")
+            self.reconcile_stale_protection()
             return None
 
         # 读取上次的提交数和大小
@@ -393,6 +426,7 @@ class RepositoryBackup:
 
             # 保护上一次的快照（异常发生前的正常状态）
             if config.PROTECT_ABNORMAL_SNAPSHOTS:
+                logger.info("  异常检测: 已触发，将保护上一快照")
                 previous_snapshot = self.get_previous_snapshot(snapshot_path)
                 if (
                     previous_snapshot
@@ -416,7 +450,37 @@ class RepositoryBackup:
             commit_tracking_file.write_text(str(current_commits))
         if not size_read_failed:
             size_tracking_file.write_text(str(current_size))
+        logger.info("  异常检测: 未触发，不会标记受保护快照")
+        self.reconcile_stale_protection()
         return None
+
+    def reconcile_stale_protection(self) -> int:
+        """无活跃告警时清除保护标记（侧车 + 目录内遗留）"""
+        alert_file = self.backup_dir / ".alerts"
+        if alert_file.exists() and alert_file.stat().st_size > 0:
+            return 0
+
+        cleared = 0
+        if not self.snapshot_dir.exists():
+            return 0
+
+        for snapshot in self._sorted_snapshots(self.snapshot_dir):
+            cleared += clear_protection_markers(snapshot)
+
+        if cleared:
+            logger.info(f"  无活跃告警，已清除 {cleared} 个保护标记")
+
+        need_review_file = Path(config.BACKUP_ROOT) / ".need_review"
+        if need_review_file.exists() and need_review_file.stat().st_size > 0:
+            lines = need_review_file.read_text(encoding='utf-8').splitlines()
+            kept = [line for line in lines if line.strip() != self.full_name]
+            if len(kept) != len(lines):
+                need_review_file.write_text(
+                    '\n'.join(kept) + ('\n' if kept else ''),
+                    encoding='utf-8',
+                )
+
+        return cleared
 
     @staticmethod
     def _sorted_snapshots(snapshot_dir: Path) -> List[Path]:
@@ -461,23 +525,27 @@ class RepositoryBackup:
             return None
 
     def protect_snapshot(self, snapshot_path: Path, reasons: List[str]):
-        """标记快照为永久保留"""
+        """标记快照为永久保留（侧车文件，禁止写入快照目录内）"""
         try:
-            protect_file = snapshot_path / ".protected"
-            with open(protect_file, 'w') as f:
+            protect_file = protection_marker_path(
+                self.snapshot_dir, snapshot_path.name
+            )
+            with open(protect_file, 'w', encoding='utf-8') as f:
                 f.write("# 此快照已被标记为永久保留\n")
                 f.write("# 保护原因: 异常发生前的正常状态\n")
                 f.write(f"# 标记时间: {datetime.now().isoformat()}\n")
                 f.write(f"# 仓库: {self.full_name}\n")
+                f.write(f"# 快照目录: {snapshot_path.name}\n")
                 f.write("#\n")
                 f.write("# 检测到的异常（发生在此快照之后）:\n")
                 for reason in reasons:
                     f.write(f"#   - {reason}\n")
                 f.write("#\n")
                 f.write("# 此快照保存的是异常发生前的正常状态，可安全恢复\n")
-                f.write("# 如需取消保护，删除此文件即可\n")
+                f.write("# 如需取消保护，删除 snapshots 旁侧车 .protected 文件\n")
+            self._strip_inline_protection_artifact(snapshot_path)
             logger.info(
-                f"  🔒 快照已标记为永久保留: {snapshot_path.name} （异常前的正常状态）"
+                f"  🔒 快照已标记为永久保留: {snapshot_path.name} （侧车: {protect_file.name}）"
             )
         except Exception as e:
             logger.warning(f"标记快照保护失败: {e}")
@@ -495,9 +563,7 @@ class RepositoryBackup:
             if not snapshot.is_dir():
                 continue
 
-            # 检查是否被保护
-            protect_file = snapshot / ".protected"
-            if protect_file.exists():
+            if is_snapshot_protected(snapshot):
                 protected_count += 1
                 continue  # 跳过被保护的快照
 
@@ -1013,7 +1079,7 @@ def _collect_repo_report_detail(
         all_snapshots = RepositoryBackup._sorted_snapshots(snapshot_dir)
         snapshot_count = len(all_snapshots)
         protected_snapshot_count = len(
-            [s for s in all_snapshots if (s / ".protected").exists()]
+            [s for s in all_snapshots if is_snapshot_protected(s)]
         )
         if all_snapshots:
             latest_snapshot = all_snapshots[0].name
@@ -1329,7 +1395,7 @@ def generate_report(target_repo: Optional[str] = None):
                         protected_snapshots = [
                             s.name
                             for s in snapshots
-                            if s.is_dir() and (s / ".protected").exists()
+                            if s.is_dir() and is_snapshot_protected(s)
                         ]
                         if protected_snapshots:
                             f.write(
@@ -1427,9 +1493,9 @@ def generate_report(target_repo: Optional[str] = None):
         f.write(f"- 最新报告链接: {config.LATEST_REPORT}\n")
         f.write("\n")
         f.write("**受保护资源管理**:\n")
-        f.write("- 查看快照保护: `cat /path/to/snapshot/.protected`\n")
+        f.write("- 查看快照保护: `cat snapshots/<快照ID>.protected`\n")
         f.write("- 查看报告保护: `cat /path/to/report-xxx.md.protected`\n")
-        f.write("- 取消保护: 删除对应的 `.protected` 文件\n")
+        f.write("- 取消保护: 删除 snapshots 目录旁 `<快照ID>.protected` 侧车文件\n")
         f.write("- 再次运行备份后，超期资源将被清理\n")
 
     meta_file = report_file.with_suffix('.md.meta.json')

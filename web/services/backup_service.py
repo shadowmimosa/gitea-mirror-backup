@@ -7,6 +7,8 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import subprocess
 
+from src.snapshot_utils import is_snapshot_protected
+
 
 class BackupService:
     """备份服务类 - 适配实际的备份目录结构"""
@@ -97,7 +99,7 @@ class BackupService:
             snapshot_count = len(snapshots)
 
             # 统计受保护的快照
-            protected_count = len([s for s in snapshots if (s / ".protected").exists()])
+            protected_count = len([s for s in snapshots if is_snapshot_protected(s)])
 
             # 获取最新快照时间
             if snapshots:
@@ -107,7 +109,7 @@ class BackupService:
                 )
 
         # 检查是否有异常告警
-        has_alert = (repo_dir / ".alerts").exists()
+        has_alert = (repo_dir / ".alerts").exists() and (repo_dir / ".alerts").stat().st_size > 0
 
         return {
             "name": repo_name,
@@ -262,7 +264,7 @@ class BackupService:
                     pass
 
             # 检查是否受保护
-            is_protected = (snapshot_dir / ".protected").exists()
+            is_protected = is_snapshot_protected(snapshot_dir)
 
             # 使用 du 命令快速获取目录大小（比 Python 递归快得多）
             size = 0
@@ -325,7 +327,7 @@ class BackupService:
                     pass
 
             # 检查是否受保护
-            is_protected = (snapshot_dir / ".protected").exists()
+            is_protected = is_snapshot_protected(snapshot_dir)
 
             snapshot_info = {
                 "id": snapshot_dir.name,
@@ -501,7 +503,7 @@ class BackupService:
             return False
 
         # 检查是否受保护
-        if (snapshot_path / ".protected").exists():
+        if is_snapshot_protected(snapshot_path):
             return False  # 不允许删除受保护的快照
 
         try:
