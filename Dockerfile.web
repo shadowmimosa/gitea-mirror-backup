@@ -21,18 +21,32 @@ RUN pnpm build
 # 后端镜像
 FROM python:3.9-slim
 
+ARG DOCKER_VERSION=27.5.1
+ARG TARGETARCH
+
 LABEL maintainer="Gitea Mirror Backup"
 LABEL description="Web management interface for Gitea Mirror Backup"
 
 WORKDIR /app
 
-# 安装系统依赖（git + docker CLI，供 Web 触发备份容器）
+# git + Docker 官方静态 CLI（Debian 13 slim 无可用 docker.io 客户端包）
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     git \
-    docker.io \
-    && rm -rf /var/lib/apt/lists/* \
-    && docker --version
+    ca-certificates \
+    curl \
+    && case "${TARGETARCH}" in \
+        amd64) DOCKER_ARCH=x86_64 ;; \
+        arm64) DOCKER_ARCH=aarch64 ;; \
+        *) echo "unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
+      esac \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VERSION}.tgz" \
+      | tar xz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && chmod +x /usr/local/bin/docker \
+    && rm -rf /tmp/docker \
+    && docker --version \
+    && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件
 COPY web/requirements.txt /app/web/requirements.txt
