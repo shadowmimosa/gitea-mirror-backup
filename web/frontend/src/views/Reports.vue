@@ -8,12 +8,7 @@
             <n-radio-button value="normal">正常</n-radio-button>
             <n-radio-button value="alert">异常保留</n-radio-button>
           </n-radio-group>
-          <n-button type="primary" @click="fetchReports">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            刷新
-          </n-button>
+          <RefreshButton size="small" :loading="loading" @click="fetchReports" />
         </n-space>
       </template>
 
@@ -53,12 +48,13 @@ import {
   NCard, NButton, NDataTable, NIcon, NModal, NScrollbar, NTag, NSpace,
   NRadioGroup, NRadioButton, NSpin, NEmpty, useMessage
 } from 'naive-ui'
-import { RefreshOutline, DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
+import { DocumentTextOutline, EyeOutline } from '@vicons/ionicons5'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import 'github-markdown-css/github-markdown-dark.css'
 import api from '@/api/client'
 import { getApiErrorMessage } from '@/utils/errorHandler'
+import RefreshButton from '@/components/RefreshButton.vue'
 
 const message = useMessage()
 

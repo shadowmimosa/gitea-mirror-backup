@@ -2,12 +2,7 @@
   <div class="snapshots">
     <n-card title="快照列表">
       <template #header-extra>
-        <n-button type="primary" @click="fetchSnapshots">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
+        <RefreshButton :loading="loading" @click="fetchSnapshots" />
       </template>
 
       <div class="filter-bar">
@@ -94,10 +89,11 @@ import {
   NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, NText,
   NPagination, NInput, NSelect, NSwitch, NEmpty, useMessage, useDialog
 } from 'naive-ui'
-import { RefreshOutline, TrashOutline } from '@vicons/ionicons5'
+import { TrashOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { getApiErrorMessage } from '@/utils/errorHandler'
+import RefreshButton from '@/components/RefreshButton.vue'
 
 const route = useRoute()
 const router = useRouter()

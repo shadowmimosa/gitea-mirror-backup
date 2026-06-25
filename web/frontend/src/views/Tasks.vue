@@ -11,12 +11,7 @@
         >
           立即全量备份
         </n-button>
-        <n-button @click="refreshAll">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
+        <RefreshButton :loading="loading" @click="refreshAll" />
       </n-space>
     </PageActions>
 
@@ -64,7 +59,7 @@
       </n-spin>
       <template #footer>
         <n-space>
-          <n-button @click="refreshLog" :loading="logLoading">刷新日志</n-button>
+          <RefreshButton label="刷新日志" :loading="logLoading" @click="refreshLog" />
           <n-button v-if="selectedTask?.status === 'running'" type="primary" @click="startLogPolling">
             自动刷新
           </n-button>
@@ -80,10 +75,11 @@ import {
   NCard, NButton, NDataTable, NIcon, NTag, NSpace, NPagination,
   NModal, NScrollbar, NSpin, NAlert, useMessage
 } from 'naive-ui'
-import { RefreshOutline, EyeOutline } from '@vicons/ionicons5'
+import { EyeOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import PageActions from '@/components/PageActions.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const message = useMessage()

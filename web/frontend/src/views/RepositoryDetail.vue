@@ -25,12 +25,7 @@
         >
           立即备份
         </n-button>
-        <n-button type="primary" @click="fetchSnapshots">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
+        <RefreshButton :loading="loading" @click="fetchSnapshots" />
       </n-space>
     </PageActions>
 
@@ -202,11 +197,12 @@ import {
   NModal, NAlert, NFormItem, NSelect, NRadioGroup, NRadio, NInput,
   NSwitch, NEmpty, NSpin, NScrollbar, useMessage, useDialog
 } from 'naive-ui'
-import { RefreshOutline, TrashOutline, ArrowBackOutline } from '@vicons/ionicons5'
+import { TrashOutline, ArrowBackOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
 import PageActions from '@/components/PageActions.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()

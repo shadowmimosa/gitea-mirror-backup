@@ -2,12 +2,7 @@
   <div class="repositories">
     <n-card title="仓库列表">
       <template #header-extra>
-        <n-button type="primary" @click="fetchRepositories">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
+        <RefreshButton :loading="loading" @click="fetchRepositories" />
       </template>
 
       <n-empty
@@ -31,9 +26,10 @@
 import { ref, h, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NCard, NButton, NDataTable, NIcon, NTag, NEmpty, useMessage } from 'naive-ui'
-import { RefreshOutline, EyeOutline } from '@vicons/ionicons5'
+import { EyeOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { getApiErrorMessage } from '@/utils/errorHandler'
+import RefreshButton from '@/components/RefreshButton.vue'
 
 const router = useRouter()
 const message = useMessage()

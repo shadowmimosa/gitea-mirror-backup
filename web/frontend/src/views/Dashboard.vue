@@ -12,12 +12,7 @@
           >
             立即备份
           </n-button>
-          <n-button size="small" @click="fetchAll">
-            <template #icon>
-              <n-icon><RefreshOutline /></n-icon>
-            </template>
-            刷新
-          </n-button>
+          <RefreshButton size="small" :loading="loading" @click="fetchAll" />
         </n-space>
       </PageActions>
 
@@ -132,12 +127,13 @@ import {
 } from 'naive-ui'
 import {
   FolderOpenOutline, CameraOutline, ServerOutline,
-  CheckmarkCircleOutline, RefreshOutline
+  CheckmarkCircleOutline
 } from '@vicons/ionicons5'
 import api from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { getApiErrorMessage } from '@/utils/errorHandler'
 import PageActions from '@/components/PageActions.vue'
+import RefreshButton from '@/components/RefreshButton.vue'
 
 const message = useMessage()
 const router = useRouter()
