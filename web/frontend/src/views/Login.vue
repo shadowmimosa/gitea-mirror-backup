@@ -2,6 +2,7 @@
   <div class="login-container">
     <div class="login-box">
       <div class="login-header">
+        <AppLogo :size="56" :show-text="false" class="login-logo" />
         <h1>Gitea Mirror Backup</h1>
         <p>Web 管理界面</p>
       </div>
@@ -55,6 +56,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useMessage, NForm, NFormItem, NInput, NButton } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import { getApiErrorMessage } from '@/utils/errorHandler'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -164,6 +166,15 @@ async function handleLogin() {
 .login-header {
   text-align: center;
   margin-bottom: 40px;
+}
+
+.login-logo {
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.login-logo :deep(.app-logo__mark) {
+  filter: drop-shadow(0 8px 20px rgba(102, 126, 234, 0.35));
 }
 
 .login-header h1 {

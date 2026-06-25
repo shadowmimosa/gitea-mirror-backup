@@ -12,8 +12,11 @@
       @expand="collapsed = false"
     >
       <div class="logo">
-        <h2 v-if="!collapsed">Gitea Backup</h2>
-        <h2 v-else>GB</h2>
+        <AppLogo
+          :size="collapsed ? 28 : 32"
+          :show-text="!collapsed"
+          :compact="collapsed"
+        />
       </div>
 
       <n-menu
@@ -27,7 +30,10 @@
     </n-layout-sider>
 
     <n-drawer v-model:show="mobileMenuOpen" :width="240" placement="left">
-      <n-drawer-content title="Gitea Backup" closable>
+      <n-drawer-content closable>
+        <template #header>
+          <AppLogo :size="28" :show-text="false" />
+        </template>
         <n-menu
           :options="menuOptions"
           :value="activeKey"
@@ -88,6 +94,7 @@ import {
   MenuOutline
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -218,13 +225,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.logo h2 {
-  font-size: 20px;
-  font-weight: 700;
-  color: #fff;
+.logo :deep(.app-logo__text) {
+  font-size: 17px;
 }
 
 @media (max-width: 768px) {
