@@ -58,6 +58,7 @@ class TaskRun(Base):
     finished_at = Column(DateTime(timezone=True), nullable=True)
     log_file = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
+    repository = Column(String(255), nullable=True)
 
     # 关系
     task = relationship("Task", back_populates="runs")

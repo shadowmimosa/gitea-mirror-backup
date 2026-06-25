@@ -1,9 +1,11 @@
 <template>
   <div class="repository-detail">
+    <PageBreadcrumb :items="breadcrumbItems" />
+
     <n-card>
       <template #header>
         <n-space align="center">
-          <n-button text @click="$router.back()">
+          <n-button text @click="$router.push('/repositories')">
             <template #icon>
               <n-icon><ArrowBackOutline /></n-icon>
             </template>
@@ -14,66 +16,92 @@
 
       <template #header-extra>
         <n-space>
-          <n-button type="warning" @click="openRestoreModal">
+          <n-button
+            v-if="authStore.isAdmin"
+            type="warning"
+            @click="openRestoreModal"
+          >
             恢复
           </n-button>
+          <n-button
+            v-if="authStore.isAdmin"
+            type="success"
+            :loading="backupLoading"
+            @click="triggerBackup"
+          >
+            立即备份
+          </n-button>
           <n-button type="primary" @click="fetchSnapshots">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
           </n-button>
         </n-space>
       </template>
 
-      <!-- 仓库信息 -->
-      <n-descriptions v-if="repoInfo" :column="3" bordered style="margin-bottom: 20px;">
-        <n-descriptions-item label="仓库全名">
-          {{ repoInfo.full_name }}
-        </n-descriptions-item>
-        <n-descriptions-item label="提交数">
-          {{ repoInfo.commit_count || 0 }}
-        </n-descriptions-item>
-        <n-descriptions-item label="快照数量">
-          {{ repoInfo.snapshot_count }}
-          <span v-if="repoInfo.protected_snapshots > 0" style="color: #f0a020;">
-            (🔒 {{ repoInfo.protected_snapshots }})
-          </span>
-        </n-descriptions-item>
-        <n-descriptions-item label="磁盘使用">
-          {{ formatBytes(repoInfo.disk_usage) }}
-        </n-descriptions-item>
-        <n-descriptions-item label="最后备份">
-          {{ formatDate(repoInfo.last_backup_time) }}
-        </n-descriptions-item>
-        <n-descriptions-item label="状态">
-          <n-tag :type="repoInfo.status === 'warning' ? 'warning' : 'success'">
-            {{ repoInfo.status === 'warning' ? '⚠️ 有异常' : '正常' }}
-          </n-tag>
-        </n-descriptions-item>
-      </n-descriptions>
+      <n-spin :show="loading && !repoInfo">
+        <n-descriptions v-if="repoInfo" :column="3" bordered style="margin-bottom: 20px;">
+          <n-descriptions-item label="仓库全名">
+            {{ repoInfo.full_name }}
+          </n-descriptions-item>
+          <n-descriptions-item label="提交数">
+            {{ repoInfo.commit_count || 0 }}
+          </n-descriptions-item>
+          <n-descriptions-item label="快照数量">
+            {{ repoInfo.snapshot_count }}
+            <span v-if="repoInfo.protected_snapshots > 0" style="color: #f0a020;">
+              (保护 {{ repoInfo.protected_snapshots }})
+            </span>
+          </n-descriptions-item>
+          <n-descriptions-item label="磁盘使用">
+            {{ formatBytes(repoInfo.disk_usage) }}
+          </n-descriptions-item>
+          <n-descriptions-item label="最后备份">
+            {{ formatDate(repoInfo.last_backup_time) }}
+          </n-descriptions-item>
+          <n-descriptions-item label="状态">
+            <n-tag :type="repoInfo.status === 'warning' ? 'warning' : 'success'" size="small">
+              {{ repoInfo.status === 'warning' ? '有异常' : '正常' }}
+            </n-tag>
+          </n-descriptions-item>
+        </n-descriptions>
+      </n-spin>
 
-      <!-- 快照列表 -->
       <n-divider>快照列表</n-divider>
-      
-      <n-space style="margin-bottom: 12px;">
-        <n-button 
-          type="error" 
-          :disabled="selectedSnapshots.length === 0 || hasProtectedSelected"
-          @click="handleBatchDelete"
-        >
-          <template #icon>
-            <n-icon><TrashOutline /></n-icon>
-          </template>
-          批量删除 ({{ selectedSnapshots.length }})
-        </n-button>
-        <n-text v-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
-          * 已选择的快照中包含受保护的快照，无法删除
-        </n-text>
+
+      <n-space style="margin-bottom: 12px;" wrap>
+        <n-switch v-model:value="includeSize" size="small" @update:value="fetchSnapshots">
+          <template #checked>显示大小</template>
+          <template #unchecked>隐藏大小</template>
+        </n-switch>
+        <template v-if="authStore.isAdmin">
+          <n-button
+            type="error"
+            :disabled="selectedSnapshots.length === 0 || hasProtectedSelected || batchDeleting"
+            :loading="batchDeleting"
+            @click="handleBatchDelete"
+          >
+            <template #icon>
+              <n-icon><TrashOutline /></n-icon>
+            </template>
+            批量删除 ({{ selectedSnapshots.length }})
+          </n-button>
+          <n-text v-if="batchDeleting" depth="3" style="font-size: 12px;">
+            正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
+          </n-text>
+        </template>
       </n-space>
 
+      <n-empty
+        v-if="!loading && snapshots.length === 0"
+        description="该仓库暂无快照"
+        style="margin: 16px 0;"
+      />
+
       <n-data-table
-        :columns="columns"
+        v-else
+        :columns="tableColumns"
         :data="snapshots"
         :loading="loading"
         :pagination="false"
@@ -81,7 +109,7 @@
         v-model:checked-row-keys="selectedSnapshots"
         @update:checked-row-keys="handleCheck"
       />
-      
+
       <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
         <n-pagination
           v-model:page="currentPage"
@@ -97,6 +125,11 @@
           </template>
         </n-pagination>
       </div>
+
+      <n-divider v-if="repoInfo?.recent_logs?.length">最近相关日志</n-divider>
+      <n-scrollbar v-if="repoInfo?.recent_logs?.length" style="max-height: 200px;">
+        <pre class="log-preview">{{ repoInfo.recent_logs.join('\n') }}</pre>
+      </n-scrollbar>
     </n-card>
 
     <n-modal
@@ -134,7 +167,14 @@
         </n-form-item>
 
         <n-form-item v-if="restoreMode === 'bundle'" label="Bundle 路径">
-          <n-input v-model:value="restoreBundlePath" placeholder="/tmp/owner-repo.bundle" />
+          <n-input
+            v-model:value="restoreBundlePath"
+            placeholder="/tmp/owner-repo.bundle"
+            @blur="validateBundlePath"
+          />
+          <n-text v-if="bundlePathError" type="error" depth="3" style="font-size: 12px;">
+            {{ bundlePathError }}
+          </n-text>
         </n-form-item>
 
         <n-button type="primary" :loading="restoreLoading" @click="generateRestoreCommand">
@@ -145,12 +185,7 @@
           <n-alert v-for="(w, i) in restorePreview.warnings" :key="'w-' + i" type="warning" style="margin-bottom: 8px;">
             {{ w }}
           </n-alert>
-          <n-input
-            type="textarea"
-            :rows="8"
-            readonly
-            :value="restoreCommandText"
-          />
+          <n-input type="textarea" :rows="8" readonly :value="restoreCommandText" />
           <n-space style="margin-top: 8px;">
             <n-button @click="copyRestoreCommand">复制命令</n-button>
           </n-space>
@@ -165,139 +200,141 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { 
-  NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, 
+import { useRoute, useRouter } from 'vue-router'
+import {
+  NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace,
   NDivider, NDescriptions, NDescriptionsItem, NText, NPagination,
   NModal, NAlert, NFormItem, NSelect, NRadioGroup, NRadio, NInput,
-  useMessage, useDialog 
+  NSwitch, NEmpty, NSpin, NScrollbar, useMessage, useDialog
 } from 'naive-ui'
 import { RefreshOutline, TrashOutline, ArrowBackOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
+import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()
+const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const authStore = useAuthStore()
 
 const repositoryName = computed(() => decodeURIComponent(route.params.name as string))
+const breadcrumbItems = computed(() => [
+  { label: '仓库管理', path: '/repositories' },
+  { label: repositoryName.value }
+])
+
 const loading = ref(false)
-const snapshots = ref([])
+const backupLoading = ref(false)
+const batchDeleting = ref(false)
+const batchProgress = ref({ current: 0, total: 0 })
+const snapshots = ref<any[]>([])
 const repoInfo = ref<any>(null)
 const selectedSnapshots = ref<string[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
+const includeSize = ref(false)
 
 const showRestoreModal = ref(false)
 const restoreSnapshotId = ref<string | null>(null)
 const restoreMode = ref('interactive')
 const restoreNewRepoName = ref('')
 const restoreBundlePath = ref('')
+const bundlePathError = ref('')
 const restoreLoading = ref(false)
 const restorePreview = ref<any>(null)
 const allSnapshotsForRestore = ref<any[]>([])
 
 const restoreSnapshotOptions = computed(() =>
   allSnapshotsForRestore.value.map((s: any) => ({
-    label: `${s.is_protected ? '🔒 ' : ''}${s.id} (${formatDate(s.created_at)})`,
+    label: `${s.is_protected ? '[保护] ' : ''}${s.id} (${formatDate(s.created_at)})`,
     value: s.id
   }))
 )
 
 const restoreCommandText = computed(() => {
   if (!restorePreview.value) return ''
-  const lines = [
+  return [
     ...(restorePreview.value.notes || []),
     '',
     ...(restorePreview.value.commands || []),
-  ]
-  return lines.join('\n')
+  ].join('\n')
 })
 
-const hasProtectedSelected = computed(() => {
-  return snapshots.value.some((s: any) => 
+const hasProtectedSelected = computed(() =>
+  snapshots.value.some((s: any) =>
     selectedSnapshots.value.includes(s.id) && s.is_protected
   )
-})
+)
 
-const columns = [
-  {
-    type: 'selection' as const,
-    disabled: (row: any) => row.is_protected
-  },
-  {
-    title: '快照 ID',
-    key: 'id',
-    ellipsis: {
-      tooltip: true
-    }
-  },
-  {
-    title: '大小',
-    key: 'size',
-    render: (row: any) => formatBytes(row.size)
-  },
-  {
-    title: '创建时间',
-    key: 'created_at',
-    render: (row: any) => formatDate(row.created_at)
-  },
-  {
-    title: '状态',
-    key: 'status',
-    render: (row: any) => {
-      if (row.is_protected) {
-        return h(NTag, { type: 'warning' }, { default: () => '🔒 已保护' })
+const tableColumns = computed(() => {
+  const cols: any[] = []
+  if (authStore.isAdmin) {
+    cols.push({
+      type: 'selection' as const,
+      disabled: (row: any) => row.is_protected
+    })
+  }
+  cols.push({ title: '快照 ID', key: 'id', ellipsis: { tooltip: true } })
+  if (includeSize.value) {
+    cols.push({
+      title: '大小',
+      key: 'size',
+      render: (row: any) => formatBytes(row.size)
+    })
+  }
+  cols.push(
+    {
+      title: '创建时间',
+      key: 'created_at',
+      render: (row: any) => formatDate(row.created_at)
+    },
+    {
+      title: '状态',
+      key: 'status',
+      render: (row: any) => {
+        if (row.is_protected) {
+          return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已保护' })
+        }
+        return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })
       }
-      return h(NTag, { type: 'success' }, { default: () => '正常' })
     }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    render: (row: any) => {
-      if (row.is_protected) {
+  )
+  if (authStore.isAdmin) {
+    cols.push({
+      title: '操作',
+      key: 'actions',
+      render: (row: any) => {
+        if (row.is_protected) {
+          return h(NButton, { size: 'small', type: 'error', disabled: true }, { default: () => '已保护' })
+        }
         return h(
-          NButton,
-          { size: 'small', type: 'error', disabled: true },
+          NPopconfirm,
+          { onPositiveClick: () => handleDelete(row.id) },
           {
-            icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-            default: () => '已保护'
+            trigger: () => h(NButton, { size: 'small', type: 'error' }, {
+              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+              default: () => '删除'
+            }),
+            default: () => '确定删除此快照吗？'
           }
         )
       }
-      
-      return h(
-        NPopconfirm,
-        {
-          onPositiveClick: () => handleDelete(row.id)
-        },
-        {
-          trigger: () => h(
-            NButton,
-            { size: 'small', type: 'error' },
-            {
-              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-              default: () => '删除'
-            }
-          ),
-          default: () => '确定删除此快照吗？'
-        }
-      )
-    }
+    })
   }
-]
+  return cols
+})
 
-function handlePageChange(page: number) {
-  console.log('切换到页面:', page)
-  selectedSnapshots.value = []  // 切换页面时清空选中
+function handlePageChange() {
+  selectedSnapshots.value = []
   fetchSnapshots()
 }
 
-function handlePageSizeChange(size: number) {
-  console.log('更新页面大小:', size)
+function handlePageSizeChange() {
   currentPage.value = 1
-  selectedSnapshots.value = []  // 切换页面大小时清空选中
+  selectedSnapshots.value = []
   fetchSnapshots()
 }
 
@@ -308,29 +345,39 @@ function handleCheck(keys: Array<string | number>) {
 async function fetchSnapshots() {
   loading.value = true
   try {
-    // 先获取快照总数
     const countResponse = await api.get('/snapshots/count', {
-      params: {
-        repository: repositoryName.value
-      }
+      params: { repository: repositoryName.value }
     })
     totalCount.value = countResponse.data.count
-    
-    // 获取仓库详情和当前页快照
+
     const response = await api.get(`/repositories/${encodeURIComponent(repositoryName.value)}`, {
       params: {
         page: currentPage.value,
         page_size: pageSize.value,
-        include_size: true
+        include_size: includeSize.value
       }
     })
     repoInfo.value = response.data
     snapshots.value = response.data.snapshots || []
   } catch (error) {
-    message.error('获取快照列表失败')
-    console.error(error)
+    message.error(getApiErrorMessage(error))
   } finally {
     loading.value = false
+  }
+}
+
+async function triggerBackup() {
+  backupLoading.value = true
+  try {
+    const response = await api.post(
+      `/repositories/${encodeURIComponent(repositoryName.value)}/backup`
+    )
+    message.success(response.data.message)
+    router.push('/tasks')
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
+  } finally {
+    backupLoading.value = false
   }
 }
 
@@ -339,17 +386,13 @@ async function handleDelete(id: string) {
     await api.delete(`/snapshots/${id}?repository=${encodeURIComponent(repositoryName.value)}`)
     message.success('删除成功')
     await fetchSnapshots()
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || '删除失败'
-    message.error(errorMsg)
-    console.error(error)
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
   }
 }
 
 async function handleBatchDelete() {
-  if (selectedSnapshots.value.length === 0) {
-    return
-  }
+  if (selectedSnapshots.value.length === 0) return
 
   dialog.warning({
     title: '批量删除确认',
@@ -357,6 +400,8 @@ async function handleBatchDelete() {
     positiveText: '确定删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      batchDeleting.value = true
+      batchProgress.value = { current: 0, total: selectedSnapshots.value.length }
       let successCount = 0
       let failCount = 0
 
@@ -364,25 +409,37 @@ async function handleBatchDelete() {
         try {
           await api.delete(`/snapshots/${snapshotId}?repository=${encodeURIComponent(repositoryName.value)}`)
           successCount++
-        } catch (error) {
+        } catch {
           failCount++
-          console.error(`删除快照 ${snapshotId} 失败:`, error)
         }
+        batchProgress.value.current++
       }
 
-      if (successCount > 0) {
-        message.success(`成功删除 ${successCount} 个快照`)
-      }
-      if (failCount > 0) {
-        message.error(`${failCount} 个快照删除失败`)
-      }
+      batchDeleting.value = false
+      if (successCount > 0) message.success(`成功删除 ${successCount} 个快照`)
+      if (failCount > 0) message.error(`${failCount} 个快照删除失败`)
 
-      // 先清空选中状态
       selectedSnapshots.value = []
-      // 再刷新列表
       await fetchSnapshots()
     }
   })
+}
+
+function validateBundlePath() {
+  const path = restoreBundlePath.value.trim()
+  if (!path) {
+    bundlePathError.value = ''
+    return
+  }
+  if (!path.endsWith('.bundle')) {
+    bundlePathError.value = 'Bundle 路径应以 .bundle 结尾'
+    return
+  }
+  if (path.includes(' ')) {
+    bundlePathError.value = '路径不能包含空格'
+    return
+  }
+  bundlePathError.value = ''
 }
 
 function formatBytes(bytes: number): string {
@@ -415,8 +472,7 @@ async function openRestoreModal() {
       || allSnapshotsForRestore.value[0]
     restoreSnapshotId.value = preferred?.id || null
   } catch (error) {
-    message.error('加载快照列表失败')
-    console.error(error)
+    message.error(getApiErrorMessage(error))
   }
 }
 
@@ -429,6 +485,13 @@ async function generateRestoreCommand() {
     message.warning('请输入新仓库名称')
     return
   }
+  if (restoreMode.value === 'bundle') {
+    validateBundlePath()
+    if (bundlePathError.value) {
+      message.warning(bundlePathError.value)
+      return
+    }
+  }
 
   restoreLoading.value = true
   try {
@@ -440,9 +503,8 @@ async function generateRestoreCommand() {
       bundle_path: restoreBundlePath.value || undefined
     })
     restorePreview.value = response.data
-  } catch (error: any) {
-    message.error(error.response?.data?.detail || '生成命令失败')
-    console.error(error)
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
   } finally {
     restoreLoading.value = false
   }
@@ -451,7 +513,7 @@ async function generateRestoreCommand() {
 async function copyRestoreCommand() {
   try {
     await navigator.clipboard.writeText(restoreCommandText.value)
-    message.success('已复制到剪贴板')
+    message.success('命令已复制到剪贴板')
   } catch {
     message.error('复制失败，请手动选择复制')
   }
@@ -464,6 +526,16 @@ onMounted(() => {
 
 <style scoped>
 .repository-detail {
-  padding: 20px;
+  padding: 0;
+}
+
+.log-preview {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
 }
 </style>

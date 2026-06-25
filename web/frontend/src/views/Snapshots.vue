@@ -1,5 +1,7 @@
 <template>
   <div class="snapshots">
+    <PageBreadcrumb :items="[{ label: '快照管理' }]" />
+
     <n-card title="快照列表">
       <template #header-extra>
         <n-button type="primary" @click="fetchSnapshots">
@@ -24,29 +26,44 @@
             :options="protectedOptions"
             style="width: 140px;"
           />
+          <n-switch v-model:value="includeSize" size="small">
+            <template #checked>显示大小</template>
+            <template #unchecked>隐藏大小</template>
+          </n-switch>
           <n-button @click="applyFilters">筛选</n-button>
           <n-button @click="showProtectedOnly">仅受保护</n-button>
           <n-button @click="resetFilters">重置</n-button>
         </n-space>
-        <n-space>
-        <n-button 
-          type="error" 
-          :disabled="selectedSnapshots.length === 0 || hasProtectedSelected"
-          @click="handleBatchDelete"
-        >
-          <template #icon>
-            <n-icon><TrashOutline /></n-icon>
-          </template>
-          批量删除 ({{ selectedSnapshots.length }})
-        </n-button>
-        <n-text v-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
-          * 已选择的快照中包含受保护的快照，无法删除
-        </n-text>
+        <n-space v-if="authStore.isAdmin">
+          <n-button
+            type="error"
+            :disabled="selectedSnapshots.length === 0 || hasProtectedSelected || batchDeleting"
+            :loading="batchDeleting"
+            @click="handleBatchDelete"
+          >
+            <template #icon>
+              <n-icon><TrashOutline /></n-icon>
+            </template>
+            批量删除 ({{ selectedSnapshots.length }})
+          </n-button>
+          <n-text v-if="batchDeleting" depth="3" style="font-size: 12px;">
+            正在删除 {{ batchProgress.current }}/{{ batchProgress.total }}
+          </n-text>
+          <n-text v-else-if="hasProtectedSelected" depth="3" style="font-size: 12px;">
+            已选择的快照中包含受保护的快照，无法删除
+          </n-text>
         </n-space>
       </n-space>
 
+      <n-empty
+        v-if="!loading && snapshots.length === 0"
+        description="暂无快照，等待下次定时备份"
+        style="margin: 24px 0;"
+      />
+
       <n-data-table
-        :columns="columns"
+        v-else
+        :columns="tableColumns"
         :data="snapshots"
         :loading="loading"
         :pagination="false"
@@ -54,7 +71,7 @@
         v-model:checked-row-keys="selectedSnapshots"
         @update:checked-row-keys="handleCheck"
       />
-      
+
       <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
         <n-pagination
           v-model:page="currentPage"
@@ -75,24 +92,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, NText, NPagination, NInput, NSelect, useMessage, useDialog } from 'naive-ui'
+import { ref, h, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  NCard, NButton, NDataTable, NIcon, NTag, NPopconfirm, NSpace, NText,
+  NPagination, NInput, NSelect, NSwitch, NEmpty, useMessage, useDialog
+} from 'naive-ui'
 import { RefreshOutline, TrashOutline } from '@vicons/ionicons5'
 import api from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+import PageBreadcrumb from '@/components/PageBreadcrumb.vue'
+import { getApiErrorMessage } from '@/utils/errorHandler'
 
 const route = useRoute()
+const router = useRouter()
 const message = useMessage()
 const dialog = useDialog()
+const authStore = useAuthStore()
 
 const loading = ref(false)
-const snapshots = ref([])
+const batchDeleting = ref(false)
+const batchProgress = ref({ current: 0, total: 0 })
+const snapshots = ref<any[]>([])
 const selectedSnapshots = ref<string[]>([])
 const totalCount = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const repositorySearch = ref('')
 const protectedFilter = ref<string>('')
+const includeSize = ref(false)
 
 const protectedOptions = [
   { label: '全部状态', value: '' },
@@ -100,11 +128,29 @@ const protectedOptions = [
   { label: '仅正常', value: 'false' }
 ]
 
+function syncQueryToState() {
+  repositorySearch.value = (route.query.search as string) || ''
+  protectedFilter.value = route.query.protected === 'true' ? 'true' : route.query.protected === 'false' ? 'false' : ''
+  currentPage.value = Number(route.query.page) || 1
+  pageSize.value = Number(route.query.page_size) || 10
+  includeSize.value = route.query.include_size === 'true'
+}
+
+function syncStateToQuery() {
+  const query: Record<string, string> = {}
+  if (repositorySearch.value.trim()) query.search = repositorySearch.value.trim()
+  if (protectedFilter.value) query.protected = protectedFilter.value
+  if (currentPage.value > 1) query.page = String(currentPage.value)
+  if (pageSize.value !== 10) query.page_size = String(pageSize.value)
+  if (includeSize.value) query.include_size = 'true'
+  router.replace({ query })
+}
+
 function buildFilterParams() {
   const params: Record<string, unknown> = {
     page: currentPage.value,
     page_size: pageSize.value,
-    include_size: true
+    include_size: includeSize.value
   }
   if (repositorySearch.value.trim()) {
     params.repository_search = repositorySearch.value.trim()
@@ -117,6 +163,7 @@ function buildFilterParams() {
 function applyFilters() {
   currentPage.value = 1
   selectedSnapshots.value = []
+  syncStateToQuery()
   fetchSnapshots()
 }
 
@@ -128,6 +175,7 @@ function showProtectedOnly() {
 function resetFilters() {
   repositorySearch.value = ''
   protectedFilter.value = ''
+  includeSize.value = false
   applyFilters()
 }
 
@@ -138,89 +186,79 @@ const hasProtectedSelected = computed(() => {
   })
 })
 
-const columns = [
-  {
-    type: 'selection' as const,
-    disabled: (row: any) => row.is_protected
-  },
-  {
-    title: '快照 ID',
-    key: 'id',
-    ellipsis: {
-      tooltip: true
-    }
-  },
-  {
-    title: '仓库',
-    key: 'repository'
-  },
-  {
-    title: '大小',
-    key: 'size',
-    render: (row: any) => formatBytes(row.size)
-  },
-  {
-    title: '创建时间',
-    key: 'created_at',
-    render: (row: any) => formatDate(row.created_at)
-  },
-  {
-    title: '状态',
-    key: 'status',
-    render: (row: any) => {
-      if (row.is_protected) {
-        return h(NTag, { type: 'warning' }, { default: () => '🔒 已保护' })
+const baseColumns = computed(() => {
+  const cols: any[] = []
+  if (authStore.isAdmin) {
+    cols.push({
+      type: 'selection' as const,
+      disabled: (row: any) => row.is_protected
+    })
+  }
+  cols.push(
+    { title: '快照 ID', key: 'id', ellipsis: { tooltip: true } },
+    { title: '仓库', key: 'repository' }
+  )
+  if (includeSize.value) {
+    cols.push({
+      title: '大小',
+      key: 'size',
+      render: (row: any) => formatBytes(row.size)
+    })
+  }
+  cols.push(
+    {
+      title: '创建时间',
+      key: 'created_at',
+      render: (row: any) => formatDate(row.created_at)
+    },
+    {
+      title: '状态',
+      key: 'status',
+      render: (row: any) => {
+        if (row.is_protected) {
+          return h(NTag, { type: 'warning', size: 'small' }, { default: () => '已保护' })
+        }
+        return h(NTag, { type: 'success', size: 'small' }, { default: () => '正常' })
       }
-      return h(NTag, { type: 'success' }, { default: () => '正常' })
     }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    render: (row: any) => {
-      // 如果快照受保护，显示禁用的删除按钮
-      if (row.is_protected) {
+  )
+  if (authStore.isAdmin) {
+    cols.push({
+      title: '操作',
+      key: 'actions',
+      render: (row: any) => {
+        if (row.is_protected) {
+          return h(NButton, { size: 'small', type: 'error', disabled: true }, { default: () => '已保护' })
+        }
         return h(
-          NButton,
-          { size: 'small', type: 'error', disabled: true },
+          NPopconfirm,
+          { onPositiveClick: () => handleDelete(row.id, row.repository) },
           {
-            icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-            default: () => '已保护'
+            trigger: () => h(NButton, { size: 'small', type: 'error' }, {
+              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+              default: () => '删除'
+            }),
+            default: () => '确定删除此快照吗？'
           }
         )
       }
-      
-      return h(
-        NPopconfirm,
-        {
-          onPositiveClick: () => handleDelete(row.id, row.repository)
-        },
-        {
-          trigger: () => h(
-            NButton,
-            { size: 'small', type: 'error' },
-            {
-              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-              default: () => '删除'
-            }
-          ),
-          default: () => '确定删除此快照吗？'
-        }
-      )
-    }
+    })
   }
-]
+  return cols
+})
 
-function handlePageChange(page: number) {
-  console.log('切换到页面:', page)
-  selectedSnapshots.value = []  // 切换页面时清空选中
+const tableColumns = computed(() => baseColumns.value)
+
+function handlePageChange(_page: number) {
+  selectedSnapshots.value = []
+  syncStateToQuery()
   fetchSnapshots()
 }
 
-function handlePageSizeChange(size: number) {
-  console.log('更新页面大小:', size)
+function handlePageSizeChange(_size: number) {
   currentPage.value = 1
-  selectedSnapshots.value = []  // 切换页面大小时清空选中
+  selectedSnapshots.value = []
+  syncStateToQuery()
   fetchSnapshots()
 }
 
@@ -243,8 +281,7 @@ async function fetchSnapshots() {
     const response = await api.get('/snapshots', { params: filterParams })
     snapshots.value = response.data
   } catch (error) {
-    message.error('获取快照列表失败')
-    console.error(error)
+    message.error(getApiErrorMessage(error))
   } finally {
     loading.value = false
   }
@@ -255,17 +292,13 @@ async function handleDelete(id: string, repository: string) {
     await api.delete(`/snapshots/${id}?repository=${encodeURIComponent(repository)}`)
     message.success('删除成功')
     await fetchSnapshots()
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || '删除失败'
-    message.error(errorMsg)
-    console.error(error)
+  } catch (error) {
+    message.error(getApiErrorMessage(error))
   }
 }
 
 async function handleBatchDelete() {
-  if (selectedSnapshots.value.length === 0) {
-    return
-  }
+  if (selectedSnapshots.value.length === 0) return
 
   dialog.warning({
     title: '批量删除确认',
@@ -273,37 +306,32 @@ async function handleBatchDelete() {
     positiveText: '确定删除',
     negativeText: '取消',
     onPositiveClick: async () => {
+      batchDeleting.value = true
+      batchProgress.value = { current: 0, total: selectedSnapshots.value.length }
       let successCount = 0
       let failCount = 0
 
       for (const rowKey of selectedSnapshots.value) {
-        // rowKey 格式为 "repository/snapshotId"
-        // 需要解析出 repository 和 snapshotId
         const lastSlashIndex = (rowKey as string).lastIndexOf('/')
         if (lastSlashIndex === -1) continue
-        
+
         const repository = (rowKey as string).substring(0, lastSlashIndex)
         const snapshotId = (rowKey as string).substring(lastSlashIndex + 1)
 
         try {
           await api.delete(`/snapshots/${snapshotId}?repository=${encodeURIComponent(repository)}`)
           successCount++
-        } catch (error) {
+        } catch {
           failCount++
-          console.error(`删除快照 ${snapshotId} 失败:`, error)
         }
+        batchProgress.value.current++
       }
 
-      if (successCount > 0) {
-        message.success(`成功删除 ${successCount} 个快照`)
-      }
-      if (failCount > 0) {
-        message.error(`${failCount} 个快照删除失败`)
-      }
+      batchDeleting.value = false
+      if (successCount > 0) message.success(`成功删除 ${successCount} 个快照`)
+      if (failCount > 0) message.error(`${failCount} 个快照删除失败`)
 
-      // 先清空选中状态
       selectedSnapshots.value = []
-      // 再刷新列表
       await fetchSnapshots()
     }
   })
@@ -321,11 +349,13 @@ function formatDate(date: string): string {
   return new Date(date).toLocaleString('zh-CN')
 }
 
+watch(() => route.query, () => {
+  syncQueryToState()
+  fetchSnapshots()
+})
+
 onMounted(() => {
-  if (route.query.protected === 'true') {
-    protectedFilter.value = 'true'
-  }
+  syncQueryToState()
   fetchSnapshots()
 })
 </script>
-

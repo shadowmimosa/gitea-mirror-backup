@@ -18,42 +18,63 @@ const router = createRouter({
         {
           path: '',
           name: 'Dashboard',
-          component: () => import('@/views/Dashboard.vue')
+          component: () => import('@/views/Dashboard.vue'),
+          meta: { title: '仪表板' }
         },
         {
           path: 'repositories',
           name: 'Repositories',
-          component: () => import('@/views/Repositories.vue')
+          component: () => import('@/views/Repositories.vue'),
+          meta: { title: '仓库管理' }
         },
         {
           path: 'repositories/:name',
           name: 'RepositoryDetail',
-          component: () => import('@/views/RepositoryDetail.vue')
+          component: () => import('@/views/RepositoryDetail.vue'),
+          meta: { title: '仓库详情' }
         },
         {
           path: 'snapshots',
           name: 'Snapshots',
-          component: () => import('@/views/Snapshots.vue')
+          component: () => import('@/views/Snapshots.vue'),
+          meta: { title: '快照管理' }
         },
         {
           path: 'reports',
           name: 'Reports',
-          component: () => import('@/views/Reports.vue')
+          component: () => import('@/views/Reports.vue'),
+          meta: { title: '报告查看' }
+        },
+        {
+          path: 'tasks',
+          name: 'Tasks',
+          component: () => import('@/views/Tasks.vue'),
+          meta: { title: '任务监控' }
         },
         {
           path: 'settings',
           name: 'Settings',
-          component: () => import('@/views/Settings.vue')
+          component: () => import('@/views/Settings.vue'),
+          meta: { title: '系统设置' }
         }
       ]
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('@/views/NotFound.vue'),
+      meta: { requiresAuth: false }
     }
   ]
 })
 
-// 路由守卫
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
-  
+
+  if (!authStore.authReady) {
+    await authStore.initAuth()
+  }
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
   } else if (to.name === 'Login' && authStore.isAuthenticated) {
@@ -64,4 +85,3 @@ router.beforeEach((to, _from, next) => {
 })
 
 export default router
-
