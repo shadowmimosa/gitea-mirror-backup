@@ -33,7 +33,7 @@ except ImportError:
     NotificationManager = None
     NOTIFIER_AVAILABLE = False
 
-BACKUP_SCRIPT_VERSION = "1.3.1"
+BACKUP_SCRIPT_VERSION = "1.3.2"
 
 
 # ============ 日志配置 ============
@@ -330,11 +330,25 @@ class RepositoryBackup:
             size_tracking_file.write_text(str(current_size))
             return None
 
-        # 检查提交数是否显著减少
+        # 检查提交数是否显著减少（读取失败时 current=0，不应误判为异常）
         alert_triggered = False
         alert_messages = []
+        commit_read_failed = current_commits == 0 and prev_commits > 0
+        size_read_failed = current_size == 0 and prev_size > 0
 
-        if current_commits < prev_commits:
+        if commit_read_failed:
+            logger.warning("  无法读取当前提交数，跳过提交数异常检测")
+        if size_read_failed:
+            logger.warning("  无法读取当前仓库大小，跳过大小异常检测")
+
+        decrease_percent = 0
+        size_decrease = 0
+
+        if (
+            not commit_read_failed
+            and prev_commits > 0
+            and current_commits < prev_commits
+        ):
             decrease_percent = ((prev_commits - current_commits) * 100) // prev_commits
 
             if decrease_percent > config.COMMIT_DECREASE_THRESHOLD:
@@ -348,7 +362,11 @@ class RepositoryBackup:
                 )
 
         # 同时检查大小变化（辅助参考）
-        if current_size < prev_size:
+        if (
+            not size_read_failed
+            and prev_size > 0
+            and current_size < prev_size
+        ):
             size_decrease = ((prev_size - current_size) * 100) // prev_size
             if size_decrease > config.SIZE_DECREASE_THRESHOLD:
                 if not alert_triggered:
@@ -376,20 +394,38 @@ class RepositoryBackup:
             # 保护上一次的快照（异常发生前的正常状态）
             if config.PROTECT_ABNORMAL_SNAPSHOTS:
                 previous_snapshot = self.get_previous_snapshot(snapshot_path)
-                if previous_snapshot:
+                if (
+                    previous_snapshot
+                    and previous_snapshot.resolve() != snapshot_path.resolve()
+                ):
                     self.protect_snapshot(previous_snapshot, alert_messages)
+                elif previous_snapshot:
+                    logger.warning("  ⚠️  跳过保护：上一快照与当前快照相同")
                 else:
                     logger.warning("  ⚠️  未找到上一次快照，无法自动保护")
 
-            # 更新跟踪记录
-            commit_tracking_file.write_text(str(current_commits))
-            size_tracking_file.write_text(str(current_size))
+            # 异常时仍更新跟踪值，但避免把读取失败写成 0
+            if not commit_read_failed:
+                commit_tracking_file.write_text(str(current_commits))
+            if not size_read_failed:
+                size_tracking_file.write_text(str(current_size))
             return decrease_percent if current_commits < prev_commits else size_decrease
 
         # 更新跟踪记录
-        commit_tracking_file.write_text(str(current_commits))
-        size_tracking_file.write_text(str(current_size))
+        if not commit_read_failed:
+            commit_tracking_file.write_text(str(current_commits))
+        if not size_read_failed:
+            size_tracking_file.write_text(str(current_size))
         return None
+
+    @staticmethod
+    def _sorted_snapshots(snapshot_dir: Path) -> List[Path]:
+        """按快照 ID（时间戳目录名）排序，避免 cp -al 导致 mtime 失真"""
+        return sorted(
+            [s for s in snapshot_dir.iterdir() if s.is_dir()],
+            key=lambda x: x.name,
+            reverse=True,
+        )
 
     def get_previous_snapshot(self, current_snapshot: Optional[Path]) -> Optional[Path]:
         """获取上一次的快照（当前快照之前的最近快照）"""
@@ -397,30 +433,27 @@ class RepositoryBackup:
             return None
 
         try:
-            # 获取所有快照，按时间排序（最新的在前）
-            snapshots = sorted(
-                [s for s in self.snapshot_dir.iterdir() if s.is_dir()],
-                key=lambda x: x.stat().st_mtime,
-                reverse=True,
-            )
+            snapshots = self._sorted_snapshots(self.snapshot_dir)
 
             if not snapshots:
                 return None
 
-            # 如果提供了当前快照，找到它之前的快照
-            if current_snapshot:
-                for i, snapshot in enumerate(snapshots):
-                    if snapshot == current_snapshot:
-                        # 返回下一个（更早的）快照
-                        if i + 1 < len(snapshots):
-                            logger.info(f"  找到上一次快照: {snapshots[i + 1].name}")
-                            return snapshots[i + 1]
-                        break
+            if not current_snapshot:
+                return None
 
-            # 如果没有找到或没提供当前快照，返回最新的（第一个）
-            if snapshots:
-                logger.info(f"  找到上一次快照: {snapshots[0].name}")
-                return snapshots[0]
+            current_resolved = current_snapshot.resolve()
+            for i, snapshot in enumerate(snapshots):
+                if snapshot.resolve() == current_resolved:
+                    if i + 1 < len(snapshots):
+                        previous = snapshots[i + 1]
+                        logger.info(f"  找到上一次快照: {previous.name}")
+                        return previous
+                    logger.info("  当前为首个快照，无需保护上一快照")
+                    return None
+
+            logger.warning(
+                f"  未在快照列表中定位当前快照: {current_snapshot.name}"
+            )
             return None
 
         except Exception as e:
@@ -977,18 +1010,13 @@ def _collect_repo_report_detail(
     latest_snapshot = "无"
     snapshot_dir = repo_dir / "snapshots"
     if snapshot_dir.exists():
-        snapshots = sorted(
-            snapshot_dir.iterdir(),
-            key=lambda x: x.stat().st_mtime,
-            reverse=True,
-        )
-        all_snapshots = [s for s in snapshots if s.is_dir()]
+        all_snapshots = RepositoryBackup._sorted_snapshots(snapshot_dir)
         snapshot_count = len(all_snapshots)
         protected_snapshot_count = len(
             [s for s in all_snapshots if (s / ".protected").exists()]
         )
-        if snapshots:
-            latest_snapshot = snapshots[0].name
+        if all_snapshots:
+            latest_snapshot = all_snapshots[0].name
 
     archive_count = 0
     archive_dir = repo_dir / "archives"
@@ -1294,11 +1322,7 @@ def generate_report(target_repo: Optional[str] = None):
 
                     snapshot_dir = backup_root / repo_name / "snapshots"
                     if snapshot_dir.exists():
-                        snapshots = sorted(
-                            snapshot_dir.iterdir(),
-                            key=lambda x: x.stat().st_mtime,
-                            reverse=True,
-                        )
+                        snapshots = RepositoryBackup._sorted_snapshots(snapshot_dir)
                         latest = snapshots[0].name if snapshots else "无"
                         f.write(f"**最新快照**: {latest}\n")
 
